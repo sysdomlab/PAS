@@ -174,8 +174,15 @@ class ParamGIFT_Interlayer():
 
     def calculate_grad_consistency(self):
         self.grad_consistency = abs(self.positive_grad_ema-self.negative_grad_ema) / (self.positive_grad_ema+self.negative_grad_ema)
-        self.temp_mask1 = ((self.grad_consistency > self.min_grad_consistency) & (self.grad_consistency < 0.3) & (self.param_sync_frequency > 1) & (self.param_sync_frequency > self.max_frequency // 8) & (self.iter_id > self.window_start_iter + self.observe_window_size)).cuda() if CUDA else ((self.grad_consistency > self.min_grad_consistency) & (self.grad_consistency < 0.3) & (self.param_sync_frequency > 1) & (self.iter_id > self.window_start_iter + self.observe_window_size))
-        self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency).cuda() if CUDA else (self.grad_consistency <= self.min_grad_consistency)
+        self.temp_mask1 = ((self.grad_consistency > self.min_grad_consistency) \
+                            & (self.grad_consistency < 0.3) & (self.param_sync_frequency > 1) \
+                            & (self.param_sync_frequency > self.max_frequency // 8) \
+                            & (self.iter_id > self.window_start_iter + self.observe_window_size)).cuda() \
+                            if CUDA else ((self.grad_consistency > self.min_grad_consistency) \
+                            & (self.grad_consistency < 0.3) & (self.param_sync_frequency > 1) \
+                            & (self.iter_id > self.window_start_iter + self.observe_window_size))
+        self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency).cuda() \
+                            if CUDA else (self.grad_consistency <= self.min_grad_consistency)
         # self.temp_mask3 = ((self.grad_consistency >= 0.5) & (self.param_sync_frequency < self.max_frequency) & (self.min_grad_consistency < 0.3))
         # self.window_start_iter[self.temp_mask3] = self.iter_id
         self.param_sync_frequency[self.temp_mask1] //= 2

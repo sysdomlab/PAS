@@ -19,12 +19,12 @@ class KWSconstructor(Dataset):
     def __init__(self, root, transform=None) -> None:
         f = open(root, 'r')
         data = []
-        self.train_labels = []
+        self.targets = []
         for line in f:
             s = line.split('\n')
             info = s[0].split(' ')
             data.append( (info[0],int(info[1])) )
-            self.train_labels.append(int(info[1]))
+            self.targets.append(int(info[1]))
         self.data = data
         self.transform = transform
 
@@ -106,7 +106,7 @@ class Dataset_Manager():
         torch.backends.cudnn.benchmark = False
 
     def get_index_partition(self):
-        labels = np.array(self.training_dataset.train_labels) #pytorch老版本train_labels，新版本targets
+        labels = np.array(self.training_dataset.targets) #pytorch老版本train_labels，新版本targets
         idxs = np.argsort(labels)
         each_part_size = len(self.training_dataset) // self.total_partition_number
         return idxs[each_part_size*self.partition_rank : each_part_size*(self.partition_rank+1)]

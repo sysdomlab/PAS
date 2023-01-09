@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 ### set home directory
-home=$HOME'/GIFT/GIFT_Allreduce'
+home=$HOME'/CASP-code'
 
 ### prepare master and workers
 master='localhost'
@@ -32,7 +32,7 @@ echo 'logs in '$log_dir
 num=0
 job=worker_process.py
 for i in $workers; do
-    command="export CUDA_VISIBLE_DEVICES=$cuda && python $home/$job --master_address=tcp://${master}:$((20000+trial_no)) --rank=$num --world_size=$world_size --remarks=$remarks --trial_no=$trial_no"
+    command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/$job --master_address=tcp://${master}:$((20000+trial_no)) --rank=$num --world_size=$world_size --remarks=$remarks --trial_no=$trial_no"
     echo $command
     nohup ssh $i $command > $log_dir/worker_$num.log 2>&1 &
     num=$((num+1))
