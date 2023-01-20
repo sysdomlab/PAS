@@ -77,8 +77,8 @@ class ParamGIFT_Interlayer():
 
 
         """  Initialize GIFT-related variables """
-        self.mask = torch.zeros(self.flattened_params_length).cuda().byte() if CUDA else torch.zeros(self.flattened_params_length).byte() # 旧版本不支持bool
-        self.freezing_mask = torch.zeros(self.flattened_params_length).cuda().byte() if CUDA else torch.zeros(self.flattened_params_length).byte()
+        self.mask = torch.zeros(self.flattened_params_length).cuda().bool() if CUDA else torch.zeros(self.flattened_params_length).bool() # 旧版本不支持bool
+        self.freezing_mask = torch.zeros(self.flattened_params_length).cuda().bool() if CUDA else torch.zeros(self.flattened_params_length).bool()
         # self.param_sync_iter = torch.full([self.flattened_params_length], sync_frequency).cuda() if CUDA else torch.full([self.flattened_params_length], sync_frequency)
         self.param_sync_frequency = torch.full([self.flattened_params_length], sync_frequency).cuda() if CUDA else torch.full([self.flattened_params_length], sync_frequency)
         # self.next_sync_iter = sync_frequency

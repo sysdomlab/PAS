@@ -108,12 +108,12 @@ if __name__ == '__main__':
     print('Trial ID: ' + str(args.trial_no) + '; Exp Setup Remarks: ' + args.remarks + '\n')
 
     """ Local Training Profile """
-    model_name, dataset_name, is_iid = 'CNN_Cifar10', 'Cifar10', False
+    # model_name, dataset_name, is_iid = 'CNN_Cifar10', 'Cifar10', False
     # model_name, dataset_name, is_iid = 'CNN_Mnist', 'Mnist', False
     # model_name, dataset_name, is_iid = 'CNN_FashionMnist', 'FashionMnist', False
     # model_name, dataset_name, is_iid = 'CNN_EMnist', 'EMnist', False
     # model_name, dataset_name, is_iid = 'VGG16_Cifar10', 'Cifar10', False
-    # model_name, dataset_name, is_iid = 'ResNet18_Cifar10', 'Cifar10', False
+    model_name, dataset_name, is_iid = 'ResNet18_Cifar10', 'Cifar10', False
     # model_name, dataset_name, is_iid = 'LSTM_KWS', 'KWS', False
     # model_name, dataset_name, is_iid = 'MobileNetV2_Cifar10', 'Cifar10', False
     # model_name, dataset_name, is_iid = 'GhostNet_Cifar10', 'Cifar10', False
