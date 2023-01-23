@@ -3,9 +3,9 @@
 home=$HOME'/CASP-code'
 
 ### prepare master and workers
-master='localhost'
+master='43.198.21.211'
 # workers='localhost'
-workers='localhost localhost'
+workers='43.198.21.211 43.198.21.211 18.163.189.118 18.163.189.118'
 # workers='localhost localhost localhost localhost'
 
 echo 'master(coordinator): '$master
