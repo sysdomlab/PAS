@@ -24,6 +24,7 @@ class Client():
         self.dataset_manager = Dataset_Manager(local_profile['dataset_profile'])
         self.training_dataloader = self.dataset_manager.get_training_dataloader()
         self.testing_dataloader = self.dataset_manager.get_testing_dataloader()
+        self.sync_frequency = sync_prefile['sync_frequency']
         self.max_epoch = 3000
 
         """ Sync-related variables """
@@ -82,7 +83,7 @@ class Client():
                 self.optimizer.step()
 
                 if self.sync_manager.try_sync_model(iter_id):
-                    if iter_id % 128 == 0 and self.rank == 0:
+                    if iter_id % self.sync_frequency == 0 and self.rank == 0:
                         round_id += 1
                         accuracy = self.test()
                         self.logging(' - test - iter_id: %d; epoch_id: %d, round_id: %d; accuracy: %.4f;' % (iter_id, epoch_id, round_id, accuracy))
@@ -101,6 +102,11 @@ if __name__ == '__main__':
     parser.add_argument('--rank', type=int, default=0)
     parser.add_argument('--trial_no', type=int, default=0)
     parser.add_argument('--remarks', type=str, default='Remarks Missing...')
+    parser.add_argument('--model', type=str, default='Model Missing...')
+    parser.add_argument('--dataset', type=str, default='Dataset Missing...')
+    parser.add_argument('--interlayer_type', type=str, default='Interlayer Missing...')
+    parser.add_argument('--batchsize', type=int, default=20)
+    parser.add_argument('--init_frequency', type=int, default=128)
 
     args = parser.parse_args()
     if CUDA:
@@ -114,10 +120,11 @@ if __name__ == '__main__':
     # model_name, dataset_name, is_iid = 'CNN_EMnist', 'EMnist', False
     # model_name, dataset_name, is_iid = 'VGG16_Cifar10', 'Cifar10', False
     # model_name, dataset_name, is_iid = 'ResNet18_Cifar10', 'Cifar10', False
-    model_name, dataset_name, is_iid = 'LSTM_KWS', 'KWS', False
+    # model_name, dataset_name, is_iid = 'LSTM_KWS', 'KWS', False
     # model_name, dataset_name, is_iid = 'MobileNetV2_Cifar10', 'Cifar10', False
     # model_name, dataset_name, is_iid = 'GhostNet_Cifar10', 'Cifar10', False
     # model_name, dataset_name, is_iid = 'Ghost_ResNet56_Cifar10', 'Cifar10', False
+    model_name, dataset_name, is_iid = args.model, args.dataset, False
 
     local_training_profile = {
         'model_profile' : {
@@ -128,19 +135,20 @@ if __name__ == '__main__':
             'is_iid' : is_iid,
             'total_partition_number' : 1 if is_iid else args.world_size,
             'partition_rank' : 0 if is_iid else args.rank,
-            'batch_size' : 100
+            'batch_size' : args.batchsize
         }
     }
     print('- Local Training Profile: ')
     pprint.pprint(local_training_profile)
 
     """ Synchronization Profile """
-    sync_frequency = 128
-    interlayer_type = 'ParamGIFT' # GIFT, ParamGIFT, Default, LayerGIFT
+    sync_frequency = args.init_frequency
+    # interlayer_type = 'ParamGIFT' # GIFT, ParamGIFT, Default, LayerGIFT
     # interlayer_type = 'freeParamGIFT' # GIFT, ParamGIFT, Default, LayerGIFT
     # interlayer_type = 'LayerGIFT' # GIFT, ParamGIFT, Default, LayerGIFT
     # interlayer_type = 'GIFT' # GIFT, ParamGIFT, Default, LayerGIFT
     # interlayer_type = 'Default' # GIFT, ParamGIFT, Default, LayerGIFT
+    interlayer_type = args.interlayer_type # GIFT, ParamGIFT, Default, LayerGIFT
     sync_profile = {
         'sync_frequency' : sync_frequency,
         'interlayer_type' : interlayer_type,
@@ -156,6 +164,5 @@ if __name__ == '__main__':
     """ Launch Training """
     client = Client(local_training_profile, sync_profile)
     client.train()
-
 
 
