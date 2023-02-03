@@ -225,6 +225,8 @@ class ParamGIFT_Interlayer():
                 mask = (self.param_sync_frequency == j)
                 index = mask.nonzero()
                 l=len(index)
+                if j == self.max_frequency and l == 0:
+                    tune = torch.tensor([1])
                 if l != 0:
                     proportion = l/self.flattened_params_length
                     ll.append(round(proportion*100,3))
@@ -233,6 +235,8 @@ class ParamGIFT_Interlayer():
                     if j == self.max_frequency: 
                         if gc < 0.9:
                             self.min_average_start_iter = max(self.iter_id,self.min_average_start_iter)
+                        if proportion < 0.01:
+                            tune = torch.tensor([1])
                 else:
                     ll.append(0)
                     gc= 0
@@ -243,6 +247,15 @@ class ParamGIFT_Interlayer():
             self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (self.iter_id, self.round, self.sum_num_of_param))
             average_consistency = self.grad_consistency.sum() / self.flattened_params_length  
             self.logging("iter_id: %d; average_consistency: %.4f" % (self.iter_id, average_consistency))
+
+            """print different parameters' consistency and frequency"""
+            index = torch.tensor([10000, 20000, 30000, 40000, 50000])
+            some_parameters_consistency =  self.grad_consistency[index].reshape(-1).tolist()
+            some_parameters_consistency = [round(i, 4) for i in some_parameters_consistency]
+            some_parameters_frequency = self.param_sync_frequency[index].reshape(-1).int().tolist()
+            self.logging("some_parameters_consistency: "+str(some_parameters_consistency))
+            self.logging("some_parameters_frequency: "+str(some_parameters_frequency))
+
             if average_consistency <= self.min_average_consistency or (average_consistency - self.min_average_consistency > 0.005):
                 self.min_average_consistency = average_consistency
                 self.min_average_start_iter = self.iter_id
