@@ -225,6 +225,8 @@ class ParamGIFT_Interlayer():
                 mask = (self.param_sync_frequency == j)
                 index = mask.nonzero()
                 l=len(index)
+                if j == self.max_frequency and l == 0:
+                    tune = torch.tensor([1])
                 if l != 0:
                     proportion = l/self.flattened_params_length
                     ll.append(round(proportion*100,3))
@@ -233,6 +235,8 @@ class ParamGIFT_Interlayer():
                     if j == self.max_frequency: 
                         if gc < 0.9:
                             self.min_average_start_iter = max(self.iter_id,self.min_average_start_iter)
+                        if proportion < 0.01:
+                            tune = torch.tensor([1])
                 else:
                     ll.append(0)
                     gc= 0
@@ -243,6 +247,15 @@ class ParamGIFT_Interlayer():
             self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (self.iter_id, self.round, self.sum_num_of_param))
             average_consistency = self.grad_consistency.sum() / self.flattened_params_length  
             self.logging("iter_id: %d; average_consistency: %.4f" % (self.iter_id, average_consistency))
+
+            """print different parameters' consistency and frequency"""
+            index = torch.tensor([10000, 20000, 30000, 40000, 50000])
+            some_parameters_consistency =  self.grad_consistency[index].reshape(-1).tolist()
+            some_parameters_consistency = [round(i, 4) for i in some_parameters_consistency]
+            some_parameters_frequency = self.param_sync_frequency[index].reshape(-1).int().tolist()
+            self.logging("some_parameters_consistency: "+str(some_parameters_consistency))
+            self.logging("some_parameters_frequency: "+str(some_parameters_frequency))
+
             if average_consistency <= self.min_average_consistency or (average_consistency - self.min_average_consistency > 0.005):
                 self.min_average_consistency = average_consistency
                 self.min_average_start_iter = self.iter_id
@@ -255,6 +268,7 @@ class ParamGIFT_Interlayer():
             # if self.average_consistency_stable_round + self.observe_window_size < self.iter_id:
             #     tune = torch.tensor([1])
         dist.broadcast(tune, src=0)
+
         if tune == 1:
             mask = (self.param_sync_frequency == self.max_frequency)
             self.logging('tune max frequency')
@@ -308,18 +322,24 @@ class ParamGIFT_Manager():
 
     def try_sync_model(self, iter_id):
         """ Conduct remote synchronization. """
-        
+        t1 = time.time()
         if transmit_interlayer.generate_flattened_tensor_to_transmit(iter_id) == 0:
             return False
-
+        t2 = time.time()
+        print('generate_tensor_time:%.4f' % (t2-t1))
 
         ''' [2]average '''
         if iter_id % self.sync_frequency == 0:
             length = torch.tensor([0])
             if self.rank == 0:
                 index1= transmit_interlayer.calculate_grad_consistency()
+                t3 = time.time()
+                print("calculated_consistency_time:%.4f" % (t3-t2))
                 length = torch.tensor([len(index1)])
+            t3 = time.time()
             dist.broadcast(length, src=0, group=self.group)
+            t4 = time.time()
+            print('broadcast_time:%.4f' % (t4-t3))
             if length != 0:
                 if self.rank != 0: 
                     index1 = torch.zeros([length[0],1],dtype=torch.long)
@@ -327,6 +347,8 @@ class ParamGIFT_Manager():
                 # dist.broadcast(index2, src=0, group=self.group)
                 transmit_interlayer.update_frequency(index1)
             transmit_interlayer.tune_max_frequency()
+            t5 = time.time()
+            print('tune_max_frequency_time:%.4f' % (t5-t4))
 
 
 
@@ -336,6 +358,8 @@ class ParamGIFT_Manager():
         # t4 = time.time()
         # print("broadcast_time: %.4f" % (t4-t3))
         transmit_interlayer.restore_model_from_tensor_received()
+        t6 = time.time()
+        print('restore_time:%.4f' % (t6-t5))
         # t5 = time.time()
         # print("restore_time: %.4f" % (t5-t4))
 

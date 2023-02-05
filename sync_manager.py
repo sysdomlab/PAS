@@ -229,11 +229,11 @@ class Sync_Manager():
 
     def try_sync_model(self, iter_id):
         """ Conduct remote synchronization. """
-        # t1 = time.time()
+        t1 = time.time()
         flattened_tensor_to_transmit = self.transmit_interlayer.generate_flattened_tensor_to_transmit(iter_id)
         if len(flattened_tensor_to_transmit) != 0:
-            # t2 = time.time()
-            # print("generate time: %.4f" % (t2-t1))
+            t2 = time.time()
+            print("generate time: %.4f" % (t2-t1))
             tensor_len = len(flattened_tensor_to_transmit)
             tensor_received = torch.zeros(tensor_len)
             tensor_list_received = [torch.zeros(tensor_len) for _ in range(self.world_size)] if self.rank == 0 else None
@@ -244,7 +244,7 @@ class Sync_Manager():
             # t1 = time.time()
             if CUDA:
                 flattened_tensor_to_transmit = flattened_tensor_to_transmit.cpu()
-            # t3 = time.time()
+            t3 = time.time()
             # print("transfer_time: %.4f" % (t3-t1))
             # print(len(flattened_tensor_to_transmit))
             # print(flattened_tensor_to_transmit.dtype)
@@ -252,28 +252,28 @@ class Sync_Manager():
                 dist.gather(flattened_tensor_to_transmit, gather_list = tensor_list_received, dst=0, group=self.group)
             else:
                 dist.gather(flattened_tensor_to_transmit, dst=0, group=self.group) #老版本torch
-            # t2 = time.time()
-            # print("gather_time: %.4f" % (t2-t3))
+            t2 = time.time()
+            print("gather_time: %.4f" % (t2-t3))
 
             ''' [2]average '''
             if self.rank == 0:
                 tensor_received = sum(tensor_list_received) / self.world_size
-                if (self.interlayer_type == 'GIFT' or self.interlayer_type == 'ParamGIFT') and iter_id % 128 == 0: # constrain
+                if (self.interlayer_type == 'GIFT' or self.interlayer_type == 'ParamGIFT') and iter_id % self.sync_frequency == 0: # constrain
                 # if (self.interlayer_type == 'GIFT' or self.interlayer_type == 'ParamGIFT'): # free
                     self.transmit_interlayer.calculate_grad_consistency(tensor_list_received)
                 # t3 = time.time()
                 # print("calculate_time: %.4f" % (t3-t2))
 
             ''' [3]broadcast '''
-            # t3 = time.time()
+            t3 = time.time()
             dist.broadcast(tensor_received, src=0, group=self.group)
-            # t4 = time.time()
-            # print("broadcast_time: %.4f" % (t4-t3))
+            t4 = time.time()
+            print("broadcast_time: %.4f" % (t4-t3))
             if CUDA:
                 tensor_received = tensor_received.cuda()
             self.transmit_interlayer.restore_model_from_tensor_received(tensor_received)
-            # t5 = time.time()
-            # print("restore_time: %.4f" % (t5-t4))
+            t5 = time.time()
+            print("restore_time: %.4f" % (t5-t4))
 
             return True
         return False
