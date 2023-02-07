@@ -5,8 +5,8 @@ from model_manager import Model_Manager
 from dataset_manager import Dataset_Manager
 from sync_manager import Sync_Manager
 # from ParamGIFT_manager import ParamGIFT_Manager
-from LayerGIFT_manager import LayerGIFT_Manager
-from free_ParamGIFT_manager import FreeParamGIFT_Manager
+# from LayerGIFT_manager import LayerGIFT_Manager
+# from free_ParamGIFT_manager import FreeParamGIFT_Manager
 from new_ParamGIFT_manager import ParamGIFT_Manager
 
 CUDA = torch.cuda.is_available()
@@ -25,15 +25,18 @@ class Client():
         self.training_dataloader = self.dataset_manager.get_training_dataloader()
         self.testing_dataloader = self.dataset_manager.get_testing_dataloader()
         self.sync_frequency = sync_prefile['sync_frequency']
+        self.round_id = 0
+        self.iter_id = 0
+        self.epoch_id = 0
         self.max_epoch = 3000
 
         """ Sync-related variables """
         if sync_profile['interlayer_type'] == 'ParamGIFT':
             self.sync_manager = ParamGIFT_Manager(self.model, sync_prefile)
-        elif sync_profile['interlayer_type'] == 'freeParamGIFT':
-            self.sync_manager = FreeParamGIFT_Manager(self.model, sync_prefile)
-        elif sync_profile['interlayer_type'] == 'LayerGIFT':
-            self.sync_manager = LayerGIFT_Manager(self.model, sync_prefile)
+        # elif sync_profile['interlayer_type'] == 'freeParamGIFT':
+        #     self.sync_manager = FreeParamGIFT_Manager(self.model, sync_prefile)
+        # elif sync_profile['interlayer_type'] == 'LayerGIFT':
+        #     self.sync_manager = LayerGIFT_Manager(self.model, sync_prefile)
         else:
             self.sync_manager = Sync_Manager(self.model, sync_prefile)
         self.rank = sync_profile['dist_profile']['rank']
@@ -67,13 +70,12 @@ class Client():
 
     def train(self):
         print('\n\n\t-------- START TRAINING --------\n')
-        iter_id, epoch_id, round_id = 0, 0, 0
-        while epoch_id < self.max_epoch:
+        while self.epoch_id < self.max_epoch:
             # print(next(self.model.parameters()).device)
-            epoch_id += 1
-            self.logging('start epoch: %d' % epoch_id)
+            self.epoch_id += 1
+            self.logging('start epoch: %d' % self.epoch_id)
             for step, (b_x, b_y) in enumerate(self.training_dataloader):
-                iter_id += 1
+                self.iter_id += 1
                 # t1 = time.time()
                 if CUDA:
                     b_x = b_x.cuda()
@@ -82,18 +84,17 @@ class Client():
                 self.loss_func(self.model(b_x)+1e-8, b_y).backward()
                 self.optimizer.step()
 
-                if self.sync_manager.try_sync_model(iter_id):
-                    if iter_id % 64 == 0 and self.rank == 0:
-                        round_id += 1
+                if self.sync_manager.try_sync_model(self.iter_id):
+                    if self.iter_id % 64 == 0 and self.rank == 0:
                         t1 = time.time()
                         accuracy = self.test()
                         t2 = time.time()
                         print('test_time: %.4f' % (t2-t1))
-                        self.logging(' - test - iter_id: %d; epoch_id: %d, round_id: %d; accuracy: %.4f;' % (iter_id, epoch_id, round_id, accuracy))
+                        self.logging(' - test - iter_id: %d; epoch_id: %d, round_id: %d; accuracy: %.4f;' % (self.iter_id, self.epoch_id, self.sync_manager.transmit_interlayer.round, accuracy))
                     # numpy.save('./NPY/param_client_%d_epoch_%d' % (self.rank, epoch_id), list(self.model.parameters())[0][0][0].detach().cpu().numpy())
-                        self.model_manager.save_model(round_id)
+                        self.model_manager.save_model(self.round_id)
                 
-            self.logging('finish epoch: %d\n' % epoch_id)
+            self.logging('finish epoch: %d\n' % self.epoch_id)
 
 
 if __name__ == '__main__':
@@ -136,9 +137,10 @@ if __name__ == '__main__':
         'dataset_profile' : {
             'dataset_name' : dataset_name,
             'is_iid' : is_iid,
-            'total_partition_number' : 1 if is_iid else args.world_size,
+            'world_size' : 1 if is_iid else args.world_size,
             'partition_rank' : 0 if is_iid else args.rank,
-            'batch_size' : args.batchsize
+            'batch_size' : args.batchsize,
+            'dirichlet_alpha' : 1
         }
     }
     print('- Local Training Profile: ')

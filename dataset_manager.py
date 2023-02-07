@@ -44,8 +44,9 @@ class Dataset_Manager():
     def __init__(self, dataset_profile): # (dataset_name, is_iid, total_partition_number, partition_rank)
             self.dataset_name = dataset_profile['dataset_name']
             self.is_iid = dataset_profile['is_iid']
-            self.total_partition_number = dataset_profile['total_partition_number']
+            self.world_size = dataset_profile['world_size']
             self.partition_rank = dataset_profile['partition_rank']
+            self.dirichlet_alpha = dataset_profile['dirichlet_alpha']
 
             self.transform_to_224=transforms.Compose([
                         transforms.RandomResizedCrop(224),
@@ -55,9 +56,8 @@ class Dataset_Manager():
                     ])
 
             self.batch_size = dataset_profile['batch_size']
-            self.training_dataset = self.get_training_dataset()
-            self.testing_dataset = self.get_testing_dataset()
-
+            self.training_dataset, self.testing_dataset, self.class_num = self.get_dataset()
+            self.local_size = len(self.training_dataset) / self.world_size
             self.logging('create dataset')
 
     def logging(self, string, hyperparamiters=None):
@@ -67,35 +67,33 @@ class Dataset_Manager():
         sys.stdout.flush()
 
 
-    def get_training_dataset(self):
+    def get_dataset(self):
         if self.dataset_name == 'Mnist':
-            dataset = datasets.MNIST(root='./Datasets/Mnist', train=True, download=True, transform=transforms.ToTensor())
+            train_dataset = datasets.MNIST(root='./Datasets/Mnist', train=True, download=True, transform=transforms.ToTensor())
+            test_dataset = datasets.MNIST(root='./Datasets/Mnist', train=False, transform=transforms.ToTensor())
+            class_num = 10
         if self.dataset_name == 'EMnist':
-            dataset = datasets.EMNIST(root='./Datasets/EMnist', split='balanced',train=True, download=True, transform=transforms.ToTensor())
+            train_dataset = datasets.EMNIST(root='./Datasets/EMnist', split='balanced',train=True, download=True, transform=transforms.ToTensor())
+            test_dataset = datasets.EMNIST(root='./Datasets/EMnist', split="balanced",train=False, transform=transforms.ToTensor())
+            class_num = 47
         if self.dataset_name == 'FashionMnist':
-            dataset = datasets.FashionMNIST(root='./Datasets/FashionMnist', train=True, download=True, transform=transforms.ToTensor())
+            train_dataset = datasets.FashionMNIST(root='./Datasets/FashionMnist', train=True, download=True, transform=transforms.ToTensor())
+            test_dataset = datasets.FashionMNIST(root='./Datasets/FashionMnist', train=False, transform=transforms.ToTensor())
+            class_num = 10
         if self.dataset_name == 'Cifar10':
-            dataset = datasets.CIFAR10(root='./Datasets/Cifar10', train=True, download=True, transform=transforms.ToTensor())
+            train_dataset = datasets.CIFAR10(root='./Datasets/Cifar10', train=True, download=True, transform=transforms.ToTensor())
+            test_dataset = datasets.CIFAR10(root='./Datasets/Cifar10', train=False, transform=transforms.ToTensor())
+            class_num = 10
         if self.dataset_name == 'KWS':
-            dataset = KWSconstructor(root='./kws/index_train.txt', transform=None)
+            train_dataset = KWSconstructor(root='./kws/index_train.txt', transform=None)
+            test_dataset = KWSconstructor(root='./kws/index_test.txt', transform=None)
+            class_num = 10
         if self.dataset_name == 'Cifar10_224':
-            dataset = datasets.CIFAR10(root='./Datasets/Cifar10_224', train=True, download=True, transform=self.transform_to_224)
-        return dataset
-    
-    def get_testing_dataset(self):
-        if self.dataset_name == 'Mnist':
-            dataset = datasets.MNIST(root='./Datasets/Mnist', train=False, transform=transforms.ToTensor())
-        if self.dataset_name == 'EMnist':
-            dataset = datasets.EMNIST(root='./Datasets/EMnist', split="balanced",train=False, transform=transforms.ToTensor())
-        if self.dataset_name == 'FashionMnist':
-            dataset = datasets.FashionMNIST(root='./Datasets/FashionMnist', train=False, transform=transforms.ToTensor())
-        if self.dataset_name == 'Cifar10':
-            dataset = datasets.CIFAR10(root='./Datasets/Cifar10', train=False, transform=transforms.ToTensor())
-        if self.dataset_name == 'KWS':
-            dataset = KWSconstructor(root='./kws/index_test.txt', transform=None)
-        if self.dataset_name == 'Cifar10_224':
-            dataset = datasets.CIFAR10(root='./Datasets/Cifar10_224', train=False, transform=self.transform_to_224)
-        return dataset
+            train_dataset = datasets.CIFAR10(root='./Datasets/Cifar10_224', train=True, download=True, transform=self.transform_to_224)
+            test_dataset = datasets.CIFAR10(root='./Datasets/Cifar10_224', train=False, transform=self.transform_to_224)
+            class_num = 10
+        return train_dataset, test_dataset, class_num
+
     
     def set_seed(self, seed):
         random.seed(seed)
@@ -103,13 +101,27 @@ class Dataset_Manager():
         torch.manual_seed(seed)
         torch.cuda.manual_seed(seed)
         torch.backends.cudnn.deterministic = True
+        np.random.seed(seed)
         torch.backends.cudnn.benchmark = False
 
+    def get_dirichlet(self):
+        composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size)[self.partition_rank]
+        return (composition_ratio*self.local_size).astype(int)
+
     def get_index_partition(self):
-        labels = np.array(self.training_dataset.targets) #pytorch老版本train_labels，新版本targets
-        idxs = np.argsort(labels)
-        each_part_size = len(self.training_dataset) // self.total_partition_number
-        return idxs[each_part_size*self.partition_rank : each_part_size*(self.partition_rank+1)]
+        local_idxs = []
+        self.set_seed(0)
+        labels = np.array(self.training_dataset.targets)
+        sorted_idxs = np.argsort(labels)
+        composition = self.get_dirichlet()
+        # print('local dataset composition: ' + str(composition))
+        class_pool_size = int(len(self.training_dataset) / self.class_num)
+        for i in range(len(composition)):
+            for j in range(composition[i]):
+                sample_index = sorted_idxs[int(class_pool_size*random.random()) + class_pool_size*i] # randomly sampling
+                # sample_index = sorted_idxs[(class_pool_size/self.world_size*self.rank+j) % class_pool_size + class_pool_size*i]
+                local_idxs.append(sample_index)
+        return local_idxs
 
     def get_training_dataloader(self):
         if self.is_iid:
@@ -117,7 +129,7 @@ class Dataset_Manager():
             training_dataloader = DataLoader(self.training_dataset, 
                                             batch_size=self.batch_size, 
                                             shuffle=True, 
-                                            num_workers=self.total_partition_number, 
+                                            num_workers=self.world_size, 
                                             pin_memory=True)
         else:
             self.set_seed(0)

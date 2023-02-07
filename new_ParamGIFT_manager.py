@@ -22,6 +22,8 @@ class Sync_Thread(threading.Thread):
         self.world_size = world_size
         self.rank = rank
         global transmit_interlayer
+        self.ema_theta = transmit_interlayer.ema_theta
+        self.last_tensor_of_flattened_params = copy.deepcopy(transmit_interlayer.last_tensor_of_flattened_params)
         
     def run(self):
         tensor_len = len(self.sync_param)
@@ -36,11 +38,36 @@ class Sync_Thread(threading.Thread):
             dist.gather(self.sync_param, dst=0) #老版本torch
         if self.rank == 0:
             temp_tensor_received = sum(tensor_list_received) / self.world_size
-            transmit_interlayer.pooling(tensor_list_received, self.mask)
+            self.pooling(tensor_list_received, self.mask)
+
         dist.broadcast(temp_tensor_received, src=0)
         if CUDA:
             temp_tensor_received = temp_tensor_received.to(device)
         transmit_interlayer.received_tensor[self.mask] = temp_tensor_received
+
+    def logging(self, string, hyperparameters=None):
+        print('['+str(datetime.datetime.now())+'] [Sync_Manager] [Sync_Thread] '+str(string))
+        if hyperparameters != None:
+            pprint.pprint(hyperparameters)
+        sys.stdout.flush()
+
+    def pooling(self, tensor_list_received, mask):
+        length = len(tensor_list_received[0])
+        positive_grad = torch.zeros(length).cuda() if CUDA else torch.zeros(length)
+        negative_grad = torch.zeros(length).cuda() if CUDA else torch.zeros(length)
+        zeros = torch.zeros(length).cuda() if CUDA else torch.zeros(length)
+        ''' pooling '''
+        for tensor_received in tensor_list_received:
+            if CUDA:
+                tensor_received = tensor_received.cuda()
+            grad_tensor = tensor_received - self.last_tensor_of_flattened_params[mask]
+            positive_grad += torch.where(grad_tensor >= 0, grad_tensor, zeros)
+            negative_grad -= torch.where(grad_tensor < 0, grad_tensor, zeros)
+
+
+        ''' smoothing '''
+        transmit_interlayer.positive_grad_ema[mask] = self.ema_theta*transmit_interlayer.positive_grad_ema[mask] + (1 - self.ema_theta)*positive_grad
+        transmit_interlayer.negative_grad_ema[mask] = self.ema_theta*transmit_interlayer.negative_grad_ema[mask] + (1 - self.ema_theta)*negative_grad
         
 
 
@@ -122,9 +149,10 @@ class ParamGIFT_Interlayer():
     def generate_flattened_tensor_to_transmit(self, iter_id):
         """"""
         round_iter = iter_id % self.max_frequency
-        if round_iter == 0: round_iter = self.max_frequency
+        if round_iter == 0: 
+            round_iter = self.max_frequency
+            self.round += 1
         self.iter_id = iter_id
-        self.round += 1
         if round_iter == 1: 
             self.freezing_mask.fill_(0)
         if len(self.freezing_mask.nonzero()) != 0:
@@ -167,6 +195,8 @@ class ParamGIFT_Interlayer():
             grad_tensor = tensor_received - self.last_tensor_of_flattened_params[mask]
             positive_grad += torch.where(grad_tensor >= 0, grad_tensor, zeros)
             negative_grad -= torch.where(grad_tensor < 0, grad_tensor, zeros)
+
+
         ''' smoothing '''
         self.positive_grad_ema[mask] = self.ema_theta*self.positive_grad_ema[mask] + (1 - self.ema_theta)*positive_grad
         self.negative_grad_ema[mask] = self.ema_theta*self.negative_grad_ema[mask] + (1 - self.ema_theta)*negative_grad
@@ -249,12 +279,12 @@ class ParamGIFT_Interlayer():
             self.logging("iter_id: %d; average_consistency: %.4f" % (self.iter_id, average_consistency))
 
             """print different parameters' consistency and frequency"""
-            index = torch.tensor([10000, 20000, 30000, 40000, 50000])
-            some_parameters_consistency =  self.grad_consistency[index].reshape(-1).tolist()
-            some_parameters_consistency = [round(i, 4) for i in some_parameters_consistency]
-            some_parameters_frequency = self.param_sync_frequency[index].reshape(-1).int().tolist()
-            self.logging("some_parameters_consistency: "+str(some_parameters_consistency))
-            self.logging("some_parameters_frequency: "+str(some_parameters_frequency))
+            # index = torch.tensor([10000, 20000, 30000, 40000, 50000])
+            # some_parameters_consistency =  self.grad_consistency[index].reshape(-1).tolist()
+            # some_parameters_consistency = [round(i, 4) for i in some_parameters_consistency]
+            # some_parameters_frequency = self.param_sync_frequency[index].reshape(-1).int().tolist()
+            # self.logging("some_parameters_consistency: "+str(some_parameters_consistency))
+            # self.logging("some_parameters_frequency: "+str(some_parameters_frequency))
 
             if average_consistency <= self.min_average_consistency or (average_consistency - self.min_average_consistency > 0.005):
                 self.min_average_consistency = average_consistency
@@ -322,24 +352,16 @@ class ParamGIFT_Manager():
 
     def try_sync_model(self, iter_id):
         """ Conduct remote synchronization. """
-        t1 = time.time()
         if transmit_interlayer.generate_flattened_tensor_to_transmit(iter_id) == 0:
             return False
-        t2 = time.time()
-        print('generate_tensor_time:%.4f' % (t2-t1))
 
         ''' [2]average '''
-        if iter_id % self.sync_frequency == 0:
+        if iter_id % 32 == 0:
             length = torch.tensor([0])
             if self.rank == 0:
                 index1= transmit_interlayer.calculate_grad_consistency()
-                t3 = time.time()
-                print("calculated_consistency_time:%.4f" % (t3-t2))
                 length = torch.tensor([len(index1)])
-            t3 = time.time()
             dist.broadcast(length, src=0, group=self.group)
-            t4 = time.time()
-            print('broadcast_time:%.4f' % (t4-t3))
             if length != 0:
                 if self.rank != 0: 
                     index1 = torch.zeros([length[0],1],dtype=torch.long)
@@ -347,19 +369,12 @@ class ParamGIFT_Manager():
                 # dist.broadcast(index2, src=0, group=self.group)
                 transmit_interlayer.update_frequency(index1)
             transmit_interlayer.tune_max_frequency()
-            t5 = time.time()
-            print('tune_max_frequency_time:%.4f' % (t5-t4))
-
 
 
         ''' [3]broadcast '''
         # t3 = time.time()
-
-        # t4 = time.time()
         # print("broadcast_time: %.4f" % (t4-t3))
         transmit_interlayer.restore_model_from_tensor_received()
-        t6 = time.time()
-        print('restore_time:%.4f' % (t6-t5))
         # t5 = time.time()
         # print("restore_time: %.4f" % (t5-t4))
 
