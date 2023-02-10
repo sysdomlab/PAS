@@ -38,8 +38,9 @@ class Sync_Thread(threading.Thread):
             dist.gather(self.sync_param, dst=0) #老版本torch
         if self.rank == 0:
             temp_tensor_received = sum(tensor_list_received) / self.world_size
-        for i in range(self.world_size):
-            transmit_interlayer.tensor_list_received[i][self.mask] = tensor_list_received[i]
+        if self.rank == 0:
+            for i in range(self.world_size):
+                transmit_interlayer.tensor_list_received[i][self.mask] = tensor_list_received[i]
         dist.broadcast(temp_tensor_received, src=0)
         if CUDA:
             temp_tensor_received = temp_tensor_received.to(device)
