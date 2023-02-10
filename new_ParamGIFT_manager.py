@@ -164,7 +164,8 @@ class ParamGIFT_Interlayer():
                     self.threading_queue.get().start()
             while threading.active_count() != 1:
                 continue
-            self.pooling()
+            if self.rank == 0:
+                self.pooling()
             return 1
         else:
             return 0
@@ -194,6 +195,7 @@ class ParamGIFT_Interlayer():
                             & (self.round > self.window_start_round + self.observe_window_size)).cuda() \
                             if CUDA else ((self.grad_consistency > self.min_grad_consistency) \
                             & (self.grad_consistency < 0.3) & (self.param_sync_frequency > 1) \
+                            & (self.param_sync_frequency > self.max_frequency / 2) \
                             & (self.round > self.window_start_round + self.observe_window_size))
         self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency).cuda() \
                             if CUDA else (self.grad_consistency <= self.min_grad_consistency)
