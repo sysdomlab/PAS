@@ -79,7 +79,7 @@ class GIFT_Interlayer():
             return torch.tensor([])
         # self.model = self.model.cpu() if CUDA else self.model # "tcp" can support gpu
         self.round += 1
-        self.tensor_of_flattened_params = torch.tensor([]).cuda() if CUDA else torch().tensor([])
+        self.tensor_of_flattened_params = torch.tensor([]).cuda() if CUDA else torch.tensor([])
         for p in self.model.parameters():
             flattened_param = p.data.view(-1)
             self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flattened_param),0)

@@ -9,7 +9,7 @@ except ImportError:
 CUDA = torch.cuda.is_available()
 
 ParamGIFTProfile = {
-    'ema_theta': 0.9,
+    'ema_theta': 0.5,
     'observe_window_size': 5,
     'total_group_size': int(math.log2(128))+2,
 }
@@ -71,6 +71,8 @@ class ParamGIFT_Interlayer():
 
         """ Set hyper_parameters """
         self.ema_theta = hyperparams['ema_theta']
+        print('- CAS Hyperparameter Profile: ')
+        pprint.pprint(ParamGIFTProfile)
 
         """ Initialize model-structure-related variables """
         self.param_shape_list = []
