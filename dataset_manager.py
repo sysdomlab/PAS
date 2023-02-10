@@ -106,6 +106,8 @@ class Dataset_Manager():
 
     def get_dirichlet(self):
         composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size)[self.partition_rank]
+        if self.partition_rank == 0:
+            self.logging(np.argmax(np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size),axis=1))
         return (composition_ratio*self.local_size).astype(int)
 
     def get_index_partition(self):

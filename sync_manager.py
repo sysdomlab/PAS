@@ -176,7 +176,7 @@ class Default_Interlayer():
             flattened_param = p.data.view(-1)
             self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flattened_param),0)
         self.sum_num_of_param += self.flattened_params_length/1000000
-        if iter_id % 128 == 0:
+        if iter_id % 64 == 0:
             self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (iter_id, self.round, self.sum_num_of_param))
         return self.tensor_of_flattened_params
 
@@ -229,11 +229,9 @@ class Sync_Manager():
 
     def try_sync_model(self, iter_id):
         """ Conduct remote synchronization. """
-        t1 = time.time()
         flattened_tensor_to_transmit = self.transmit_interlayer.generate_flattened_tensor_to_transmit(iter_id)
         if len(flattened_tensor_to_transmit) != 0:
-            t2 = time.time()
-            print("generate time: %.4f" % (t2-t1))
+            self.sync_round_id += 1
             tensor_len = len(flattened_tensor_to_transmit)
             tensor_received = torch.zeros(tensor_len)
             tensor_list_received = [torch.zeros(tensor_len) for _ in range(self.world_size)] if self.rank == 0 else None
@@ -241,10 +239,9 @@ class Sync_Manager():
             # self.model = self.model.cpu() if CUDA else self.model # "tcp" can support gpu
 
             ''' [1]gather '''
-            # t1 = time.time()
+            # self.logging('sync start')
             if CUDA:
                 flattened_tensor_to_transmit = flattened_tensor_to_transmit.cpu()
-            t3 = time.time()
             # print("transfer_time: %.4f" % (t3-t1))
             # print(len(flattened_tensor_to_transmit))
             # print(flattened_tensor_to_transmit.dtype)
@@ -252,8 +249,6 @@ class Sync_Manager():
                 dist.gather(flattened_tensor_to_transmit, gather_list = tensor_list_received, dst=0, group=self.group)
             else:
                 dist.gather(flattened_tensor_to_transmit, dst=0, group=self.group) #老版本torch
-            t2 = time.time()
-            print("gather_time: %.4f" % (t2-t3))
 
             ''' [2]average '''
             if self.rank == 0:
@@ -265,15 +260,11 @@ class Sync_Manager():
                 # print("calculate_time: %.4f" % (t3-t2))
 
             ''' [3]broadcast '''
-            t3 = time.time()
             dist.broadcast(tensor_received, src=0, group=self.group)
-            t4 = time.time()
-            print("broadcast_time: %.4f" % (t4-t3))
             if CUDA:
                 tensor_received = tensor_received.cuda()
+            # self.logging('sync end')
             self.transmit_interlayer.restore_model_from_tensor_received(tensor_received)
-            t5 = time.time()
-            print("restore_time: %.4f" % (t5-t4))
 
             return True
         return False

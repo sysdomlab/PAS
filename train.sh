@@ -3,11 +3,11 @@
 home=$HOME'/CASP-code'
 
 ### prepare master and workers
-# master='16.163.55.246'
-master='localhost'
-# workers='16.163.55.246 18.163.84.174 18.166.71.35 16.162.106.7 18.162.48.187 18.166.75.148 43.198.16.173 43.198.13.209 18.162.152.136 16.163.106.124 16.162.87.196 43.198.86.121 43.198.11.127 16.162.105.36 16.162.22.184 18.162.168.223 18.166.31.49 18.163.195.198 16.162.45.244 18.162.230.3'
+master='18.167.0.57'
+# master='localhost'
+workers='18.167.0.57 18.163.188.30 18.162.44.220 43.198.95.97 16.163.156.117 18.162.123.143 18.162.44.79 18.167.134.169 43.198.96.81 18.163.24.92 16.163.1.98 18.162.120.27 18.167.51.97 43.198.95.178 18.162.43.201 18.163.194.43 18.162.142.216 16.162.88.146 43.198.90.67 18.167.165.118'
 
-workers='localhost localhost localhost localhost'
+# workers='localhost localhost localhost localhost'
 
 echo 'master(coordinator): '$master
 echo 'worker_hosts: '$workers
@@ -38,15 +38,15 @@ dataset="KWS"
 # dataset="Cifar10"
 # interlayer_type="Default"
 interlayer_type="ParamGIFT"
-batchsize=20
-init_frequency=1
+batchsize=64
+init_frequency=64
+dirichlet_alpha=0.1
 for i in $workers; do
-    command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/$job --master_address=tcp://${master}:$((20000+trial_no)) --rank=$num --world_size=$world_size --remarks=$remarks --trial_no=$trial_no --model=$model --dataset=$dataset --interlayer_type=$interlayer_type --batchsize=$batchsize --init_frequency=$init_frequency"
+    command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/$job --master_address=tcp://${master}:$((20000+trial_no)) --rank=$num --world_size=$world_size --remarks=$remarks --trial_no=$trial_no --model=$model --dataset=$dataset --interlayer_type=$interlayer_type --batchsize=$batchsize --init_frequency=$init_frequency --dirichlet_alpha=$dirichlet_alpha"
     echo $command
     nohup ssh $i $command > $log_dir/worker_$num.log 2>&1 &
     num=$((num+1))
 done
-
 
 
 

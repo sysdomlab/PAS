@@ -76,24 +76,18 @@ class Client():
             self.logging('start epoch: %d' % self.epoch_id)
             for step, (b_x, b_y) in enumerate(self.training_dataloader):
                 self.iter_id += 1
-                # t1 = time.time()
                 if CUDA:
                     b_x = b_x.cuda()
                     b_y = b_y.cuda()
                 self.optimizer.zero_grad()
                 self.loss_func(self.model(b_x)+1e-8, b_y).backward()
                 self.optimizer.step()
-
                 if self.sync_manager.try_sync_model(self.iter_id):
                     if self.iter_id % 64 == 0 and self.rank == 0:
-                        t1 = time.time()
                         accuracy = self.test()
-                        t2 = time.time()
-                        print('test_time: %.4f' % (t2-t1))
-                        self.logging(' - test - iter_id: %d; epoch_id: %d, round_id: %d; accuracy: %.4f;' % (self.iter_id, self.epoch_id, self.sync_manager.transmit_interlayer.round, accuracy))
+                        self.logging(' - test - iter_id: %d; epoch_id: %d, round_id: %d; accuracy: %.4f;' % (self.iter_id, self.epoch_id, self.sync_manager.sync_round_id, accuracy))
                     # numpy.save('./NPY/param_client_%d_epoch_%d' % (self.rank, epoch_id), list(self.model.parameters())[0][0][0].detach().cpu().numpy())
-                        self.model_manager.save_model(self.round_id)
-                
+                        self.model_manager.save_model(self.sync_manager.sync_round_id)
             self.logging('finish epoch: %d\n' % self.epoch_id)
 
 
@@ -111,6 +105,7 @@ if __name__ == '__main__':
     parser.add_argument('--interlayer_type', type=str, default='Interlayer Missing...')
     parser.add_argument('--batchsize', type=int, default=20)
     parser.add_argument('--init_frequency', type=int, default=128)
+    parser.add_argument('--dirichlet_alpha', type=float, default=0.5)
 
     args = parser.parse_args()
     if CUDA:
@@ -140,7 +135,7 @@ if __name__ == '__main__':
             'world_size' : 1 if is_iid else args.world_size,
             'partition_rank' : 0 if is_iid else args.rank,
             'batch_size' : args.batchsize,
-            'dirichlet_alpha' : 1
+            'dirichlet_alpha' : args.dirichlet_alpha
         }
     }
     print('- Local Training Profile: ')

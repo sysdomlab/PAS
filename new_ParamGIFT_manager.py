@@ -24,7 +24,7 @@ class Sync_Thread(threading.Thread):
         global transmit_interlayer
         self.ema_theta = transmit_interlayer.ema_theta
         self.last_tensor_of_flattened_params = copy.deepcopy(transmit_interlayer.last_tensor_of_flattened_params)
-        
+
     def run(self):
         tensor_len = len(self.sync_param)
         temp_tensor_received = torch.zeros(tensor_len)
@@ -38,8 +38,8 @@ class Sync_Thread(threading.Thread):
             dist.gather(self.sync_param, dst=0) #老版本torch
         if self.rank == 0:
             temp_tensor_received = sum(tensor_list_received) / self.world_size
-            self.pooling(tensor_list_received, self.mask)
-
+        for i in range(self.world_size):
+            transmit_interlayer.tensor_list_received[i][self.mask] = tensor_list_received[i]
         dist.broadcast(temp_tensor_received, src=0)
         if CUDA:
             temp_tensor_received = temp_tensor_received.to(device)
@@ -50,25 +50,6 @@ class Sync_Thread(threading.Thread):
         if hyperparameters != None:
             pprint.pprint(hyperparameters)
         sys.stdout.flush()
-
-    def pooling(self, tensor_list_received, mask):
-        length = len(tensor_list_received[0])
-        positive_grad = torch.zeros(length).cuda() if CUDA else torch.zeros(length)
-        negative_grad = torch.zeros(length).cuda() if CUDA else torch.zeros(length)
-        zeros = torch.zeros(length).cuda() if CUDA else torch.zeros(length)
-        ''' pooling '''
-        for tensor_received in tensor_list_received:
-            if CUDA:
-                tensor_received = tensor_received.cuda()
-            grad_tensor = tensor_received - self.last_tensor_of_flattened_params[mask]
-            positive_grad += torch.where(grad_tensor >= 0, grad_tensor, zeros)
-            negative_grad -= torch.where(grad_tensor < 0, grad_tensor, zeros)
-
-
-        ''' smoothing '''
-        transmit_interlayer.positive_grad_ema[mask] = self.ema_theta*transmit_interlayer.positive_grad_ema[mask] + (1 - self.ema_theta)*positive_grad
-        transmit_interlayer.negative_grad_ema[mask] = self.ema_theta*transmit_interlayer.negative_grad_ema[mask] + (1 - self.ema_theta)*negative_grad
-        
 
 
 class ParamGIFT_Interlayer():
@@ -90,7 +71,6 @@ class ParamGIFT_Interlayer():
 
         """ Set hyper_parameters """
         self.ema_theta = hyperparams['ema_theta']
-        self.observe_window_size = hyperparams['observe_window_size'] * sync_frequency
 
         """ Initialize model-structure-related variables """
         self.param_shape_list = []
@@ -114,13 +94,14 @@ class ParamGIFT_Interlayer():
         if self.rank == 0:
             self.max_observe_window_start = 0
             self.min_average_consistency = 1
-            self.min_average_start_iter = 0
+            self.min_average_start_round = 0
+            self.observe_window_size = torch.full([self.flattened_params_length], hyperparams['observe_window_size']).cuda() if CUDA else torch.full([self.flattened_params_length], hyperparams['observe_window_size'])
             self.average_consistency_stable_round = self.observe_window_size
             self.grad_consistency = torch.ones(self.flattened_params_length).cuda() if CUDA else torch.ones(self.flattened_params_length)
             self.min_grad_consistency = torch.ones(self.flattened_params_length).cuda() if CUDA else torch.ones(self.flattened_params_length)
             self.positive_grad_ema = torch.zeros(self.flattened_params_length).cuda() if CUDA else torch.zeros(self.flattened_params_length)
             self.negative_grad_ema = torch.zeros(self.flattened_params_length).cuda() if CUDA else torch.zeros(self.flattened_params_length)
-            self.window_start_iter = torch.zeros(self.flattened_params_length).cuda() if CUDA else torch.zeros(self.flattened_params_length)
+            self.window_start_round = torch.zeros(self.flattened_params_length).cuda() if CUDA else torch.zeros(self.flattened_params_length)
             self.temp_mask1 = copy.deepcopy(self.mask)
             self.temp_mask2 = copy.deepcopy(self.mask)
 
@@ -145,6 +126,8 @@ class ParamGIFT_Interlayer():
         self.last_tensor_of_flattened_params = copy.deepcopy(self.tensor_of_flattened_params)
         self.frozen_tensor_of_flattened_params = copy.deepcopy(self.tensor_of_flattened_params)
         self.received_tensor = copy.deepcopy(self.tensor_of_flattened_params)
+        if self.rank == 0:
+            self.tensor_list_received = [torch.zeros(self.flattened_params_length) for _ in range(self.world_size)]
             
     def generate_flattened_tensor_to_transmit(self, iter_id):
         """"""
@@ -165,6 +148,7 @@ class ParamGIFT_Interlayer():
         self.mask = (self.param_sync_frequency == round_iter).cuda() if CUDA else (self.param_sync_frequency == round_iter)
         length = len(self.mask.nonzero())
         if length == 0: return 0
+
         self.sum_num_of_param += length/1000000
         for param in self.model.parameters():
             flattened_param = param.data.view(-1)
@@ -178,39 +162,37 @@ class ParamGIFT_Interlayer():
                     self.threading_queue.get().start()
             while threading.active_count() != 1:
                 continue
+            self.pooling()
             return 1
         else:
             return 0
         
 
-    def pooling(self, tensor_list_received, mask):
-        length = len(tensor_list_received[0])
+    def pooling(self):
+        length = len(self.tensor_list_received[0])
         positive_grad = torch.zeros(length).cuda() if CUDA else torch.zeros(length)
         negative_grad = torch.zeros(length).cuda() if CUDA else torch.zeros(length)
         zeros = torch.zeros(length).cuda() if CUDA else torch.zeros(length)
         ''' pooling '''
-        for tensor_received in tensor_list_received:
+        for tensor_received in self.tensor_list_received:
             if CUDA:
                 tensor_received = tensor_received.cuda()
-            grad_tensor = tensor_received - self.last_tensor_of_flattened_params[mask]
+            grad_tensor = tensor_received - self.last_tensor_of_flattened_params
             positive_grad += torch.where(grad_tensor >= 0, grad_tensor, zeros)
             negative_grad -= torch.where(grad_tensor < 0, grad_tensor, zeros)
 
-
         ''' smoothing '''
-        self.positive_grad_ema[mask] = self.ema_theta*self.positive_grad_ema[mask] + (1 - self.ema_theta)*positive_grad
-        self.negative_grad_ema[mask] = self.ema_theta*self.negative_grad_ema[mask] + (1 - self.ema_theta)*negative_grad
-
+        self.positive_grad_ema = self.ema_theta*self.positive_grad_ema + (1 - self.ema_theta)*positive_grad
+        self.negative_grad_ema = self.ema_theta*self.negative_grad_ema + (1 - self.ema_theta)*negative_grad
 
     def calculate_grad_consistency(self):
         self.grad_consistency = abs(self.positive_grad_ema-self.negative_grad_ema) / (self.positive_grad_ema+self.negative_grad_ema)
         self.temp_mask1 = ((self.grad_consistency > self.min_grad_consistency) \
                             & (self.grad_consistency < 0.3) & (self.param_sync_frequency > 1) \
-                            & (self.param_sync_frequency > self.max_frequency // 8) \
-                            & (self.iter_id > self.window_start_iter + self.observe_window_size)).cuda() \
+                            & (self.round > self.window_start_round + self.observe_window_size)).cuda() \
                             if CUDA else ((self.grad_consistency > self.min_grad_consistency) \
                             & (self.grad_consistency < 0.3) & (self.param_sync_frequency > 1) \
-                            & (self.iter_id > self.window_start_iter + self.observe_window_size))
+                            & (self.round > self.window_start_round + self.observe_window_size))
         self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency).cuda() \
                             if CUDA else (self.grad_consistency <= self.min_grad_consistency)
         # self.temp_mask3 = ((self.grad_consistency >= 0.5) & (self.param_sync_frequency < self.max_frequency) & (self.min_grad_consistency < 0.3))
@@ -218,10 +200,11 @@ class ParamGIFT_Interlayer():
         self.param_sync_frequency[self.temp_mask1] //= 2
         # self.temp_mask4 = self.temp_mask1 + self.temp_mask3
         self.min_grad_consistency[self.temp_mask1] = 1
+        self.observe_window_size[self.temp_mask1] *= 2
         self.negative_grad_ema[self.temp_mask1] = 0
         self.positive_grad_ema[self.temp_mask1] = 0
-        self.window_start_iter[self.temp_mask1] = self.iter_id
-        self.window_start_iter[self.temp_mask2] = self.iter_id
+        self.window_start_round[self.temp_mask1] = self.round
+        self.window_start_round[self.temp_mask2] = self.round
         self.min_grad_consistency[self.temp_mask2] = self.grad_consistency[self.temp_mask2]
         # self.param_sync_frequency[self.temp_mask3] *= 2
         # self.min_grad_consistency[self.temp_mask3] = 1
@@ -264,7 +247,7 @@ class ParamGIFT_Interlayer():
                     # waste += (1 - j/self.max_frequency) * proportion
                     if j == self.max_frequency: 
                         if gc < 0.9:
-                            self.min_average_start_iter = max(self.iter_id,self.min_average_start_iter)
+                            self.min_average_start_round = max(self.round,self.min_average_start_round)
                         if proportion < 0.01:
                             tune = torch.tensor([1])
                 else:
@@ -286,30 +269,30 @@ class ParamGIFT_Interlayer():
             # self.logging("some_parameters_consistency: "+str(some_parameters_consistency))
             # self.logging("some_parameters_frequency: "+str(some_parameters_frequency))
 
-            if average_consistency <= self.min_average_consistency or (average_consistency - self.min_average_consistency > 0.005):
-                self.min_average_consistency = average_consistency
-                self.min_average_start_iter = self.iter_id
-            else:
-                if self.min_average_start_iter + self.observe_window_size * 2 < self.iter_id and self.max_frequency > 1:
-                    tune = torch.tensor([1])
+            # if average_consistency <= self.min_average_consistency or (average_consistency - self.min_average_consistency > 0.005):
+            #     self.min_average_consistency = average_consistency
+            #     self.min_average_start_round = self.round
+            # else:
+            #     if self.min_average_start_round + self.observe_window_size * 2 < self.round and self.max_frequency > 1:
+            #         tune = torch.tensor([1])
 
             
             
             # if self.average_consistency_stable_round + self.observe_window_size < self.iter_id:
             #     tune = torch.tensor([1])
         dist.broadcast(tune, src=0)
-
         if tune == 1:
             mask = (self.param_sync_frequency == self.max_frequency)
             self.logging('tune max frequency')
             self.max_frequency //= 2
             self.param_sync_frequency[mask] //= 2
             if self.rank == 0:
+                self.observe_window_size[mask] *= 2
                 self.positive_grad_ema[mask] = 0
                 self.negative_grad_ema[mask] = 0
-                self.window_start_iter.fill_(self.iter_id)
+                self.window_start_round.fill_(self.round)
                 self.min_grad_consistency.fill_(1)
-                self.min_average_start_iter = self.iter_id
+                self.min_average_start_round = self.round
 
     def restore_model_from_tensor_received(self):
         """"""
@@ -354,9 +337,9 @@ class ParamGIFT_Manager():
         """ Conduct remote synchronization. """
         if transmit_interlayer.generate_flattened_tensor_to_transmit(iter_id) == 0:
             return False
-
+        self.sync_round_id += 1
         ''' [2]average '''
-        if iter_id % 32 == 0:
+        if iter_id % 64 == 0:
             length = torch.tensor([0])
             if self.rank == 0:
                 index1= transmit_interlayer.calculate_grad_consistency()
@@ -369,7 +352,6 @@ class ParamGIFT_Manager():
                 # dist.broadcast(index2, src=0, group=self.group)
                 transmit_interlayer.update_frequency(index1)
             transmit_interlayer.tune_max_frequency()
-
 
         ''' [3]broadcast '''
         # t3 = time.time()
