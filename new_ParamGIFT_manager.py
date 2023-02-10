@@ -196,7 +196,6 @@ class ParamGIFT_Interlayer():
                             & (self.round > self.window_start_round + self.observe_window_size)).cuda() \
                             if CUDA else ((self.grad_consistency > self.min_grad_consistency) \
                             & (self.grad_consistency < 0.3) & (self.param_sync_frequency > 1) \
-                            & (self.param_sync_frequency > self.max_frequency / 2) \
                             & (self.round > self.window_start_round + self.observe_window_size))
         self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency).cuda() \
                             if CUDA else (self.grad_consistency <= self.min_grad_consistency)
