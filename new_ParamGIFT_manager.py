@@ -9,7 +9,7 @@ except ImportError:
 CUDA = torch.cuda.is_available()
 
 ParamGIFTProfile = {
-    'ema_theta': 0.5,
+    'ema_theta': 0.7,
     'observe_window_size': 5,
     'total_group_size': int(math.log2(128))+2,
 }

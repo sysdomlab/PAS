@@ -105,22 +105,30 @@ class Dataset_Manager():
         torch.backends.cudnn.benchmark = False
 
     def get_dirichlet(self):
-        composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size)[self.partition_rank]
-        if self.partition_rank == 0:
-            self.logging(np.argmax(np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size),axis=1))
+        composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(5)), self.world_size)[self.partition_rank]
+        # if self.partition_rank == 0:
+        #     self.logging(np.argmax(np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size),axis=1))
         return (composition_ratio*self.local_size).astype(int)
 
     def get_index_partition(self):
         local_idxs = []
+        class_list = []
         self.set_seed(0)
+        for i in range(self.world_size):
+            temp_list = []
+            for i in range(5):
+                temp_list.append(random.randint(1,self.class_num))
+            class_list.append(temp_list)
+        self.logging(class_list)
+        class_list = class_list[self.partition_rank]
         labels = np.array(self.training_dataset.targets)
         sorted_idxs = np.argsort(labels)
         composition = self.get_dirichlet()
         # print('local dataset composition: ' + str(composition))
         class_pool_size = int(len(self.training_dataset) / self.class_num)
-        for i in range(len(composition)):
+        for i in range(len(class_list)):
             for j in range(composition[i]):
-                sample_index = sorted_idxs[int(class_pool_size*random.random()) + class_pool_size*i] # randomly sampling
+                sample_index = sorted_idxs[int(class_pool_size*random.random()) + class_pool_size*(class_list[i]-1)] # randomly sampling
                 # sample_index = sorted_idxs[(class_pool_size/self.world_size*self.rank+j) % class_pool_size + class_pool_size*i]
                 local_idxs.append(sample_index)
         return local_idxs
