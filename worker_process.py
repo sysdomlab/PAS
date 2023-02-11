@@ -84,7 +84,10 @@ class Client():
                 self.optimizer.step()
                 if self.sync_manager.try_sync_model(self.iter_id):
                     if self.iter_id % 64 == 0 and self.rank == 0:
+                        t1 = time.time()
                         accuracy = self.test()
+                        t2 = time.time()
+                        self.logging('test_time: %.4f' % (t2-t1))
                         self.logging(' - test - iter_id: %d; epoch_id: %d, round_id: %d; accuracy: %.4f;' % (self.iter_id, self.epoch_id, self.sync_manager.sync_round_id, accuracy))
                     # numpy.save('./NPY/param_client_%d_epoch_%d' % (self.rank, epoch_id), list(self.model.parameters())[0][0][0].detach().cpu().numpy())
                         self.model_manager.save_model(self.sync_manager.sync_round_id)

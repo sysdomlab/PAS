@@ -192,10 +192,10 @@ class ParamGIFT_Interlayer():
     def calculate_grad_consistency(self):
         self.grad_consistency = abs(self.positive_grad_ema-self.negative_grad_ema) / (self.positive_grad_ema+self.negative_grad_ema)
         self.temp_mask1 = ((self.grad_consistency > self.min_grad_consistency) \
-                            & (self.grad_consistency < 0.3) & (self.param_sync_frequency > 1) \
+                            & (self.grad_consistency < 0.1) & (self.param_sync_frequency > 1) \
                             & (self.round > self.window_start_round + self.observe_window_size)).cuda() \
                             if CUDA else ((self.grad_consistency > self.min_grad_consistency) \
-                            & (self.grad_consistency < 0.3) & (self.param_sync_frequency > 1) \
+                            & (self.grad_consistency < 0.1) & (self.param_sync_frequency > 1) \
                             & (self.round > self.window_start_round + self.observe_window_size))
         self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency).cuda() \
                             if CUDA else (self.grad_consistency <= self.min_grad_consistency)
@@ -294,9 +294,9 @@ class ParamGIFT_Interlayer():
                 self.observe_window_size[mask] *= 2
                 self.positive_grad_ema[mask] = 0
                 self.negative_grad_ema[mask] = 0
-                self.window_start_round.fill_(self.round)
+                # self.window_start_round.fill_(self.round)
                 self.min_grad_consistency.fill_(1)
-                self.min_average_start_round = self.round
+                # self.min_average_start_round = self.round
 
     def restore_model_from_tensor_received(self):
         """"""
