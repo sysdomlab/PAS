@@ -62,7 +62,7 @@ class LinearCAS_Interlayer():
         self.iter_id = 0
         self.round = 0
         self.sum_num_of_param = 0.0
-        self.frequency_list = [100, 80, 60, 40, 20, 1]
+        self.frequency_list = [64, 54, 44, 34, 24, 14, 4, 1]
         print(self.frequency_list)
 
         """ Set hyper_parameters """
@@ -187,11 +187,13 @@ class LinearCAS_Interlayer():
     def calculate_grad_consistency(self):
         self.grad_consistency = abs(self.positive_grad_ema-self.negative_grad_ema) / (self.positive_grad_ema+self.negative_grad_ema)
         self.temp_mask1 = ((self.grad_consistency > self.min_grad_consistency) \
-                            & (self.grad_consistency < 0.1) & (self.param_sync_frequency > 1) \
-                            & (self.iter_id > self.window_start_iter + self.observe_window_size * 100)).cuda() \
+                            & (self.grad_consistency < 0.1) \
+                            & (self.param_sync_frequency > 1) \
+                            & (self.iter_id > self.window_start_iter + self.observe_window_size * 64)).cuda() \
                             if CUDA else ((self.grad_consistency > self.min_grad_consistency) \
-                            & (self.grad_consistency < 0.1) & (self.param_sync_frequency > 1) \
-                            & (self.iter_id > self.window_start_iter + self.observe_window_size * 100))
+                            & (self.grad_consistency < 0.1) \
+                            & (self.param_sync_frequency > 1) \
+                            & (self.iter_id > self.window_start_iter + self.observe_window_size * 64))
         self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency).cuda() \
                             if CUDA else (self.grad_consistency <= self.min_grad_consistency)
         # self.temp_mask3 = ((self.grad_consistency >= 0.5) & (self.param_sync_frequency < self.max_frequency) & (self.min_grad_consistency < 0.3))
@@ -342,7 +344,7 @@ class LinearCAS_Manager():
             return False
         self.sync_round_id += 1
         ''' [2]average '''
-        if iter_id % 100 == 0:
+        if iter_id % 64 == 0:
             length = torch.tensor([0])
             if self.rank == 0:
                 index1= transmit_interlayer.calculate_grad_consistency()

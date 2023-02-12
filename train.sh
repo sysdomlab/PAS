@@ -40,7 +40,7 @@ dataset="KWS"
 # interlayer_type="ParamGIFT"
 interlayer_type="LinearCAS"
 batchsize=64
-init_frequency=100
+init_frequency=64
 dirichlet_alpha=1
 for i in $workers; do
     command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/$job --master_address=tcp://${master}:$((20000+trial_no)) --rank=$num --world_size=$world_size --remarks=$remarks --trial_no=$trial_no --model=$model --dataset=$dataset --interlayer_type=$interlayer_type --batchsize=$batchsize --init_frequency=$init_frequency --dirichlet_alpha=$dirichlet_alpha"
