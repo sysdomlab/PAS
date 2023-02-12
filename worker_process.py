@@ -5,7 +5,7 @@ from model_manager import Model_Manager
 from dataset_manager import Dataset_Manager
 from sync_manager import Sync_Manager
 # from ParamGIFT_manager import ParamGIFT_Manager
-# from LayerGIFT_manager import LayerGIFT_Manager
+from LinearCAS_manager import LinearCAS_Manager
 # from free_ParamGIFT_manager import FreeParamGIFT_Manager
 from new_ParamGIFT_manager import ParamGIFT_Manager
 
@@ -35,8 +35,8 @@ class Client():
             self.sync_manager = ParamGIFT_Manager(self.model, sync_prefile)
         # elif sync_profile['interlayer_type'] == 'freeParamGIFT':
         #     self.sync_manager = FreeParamGIFT_Manager(self.model, sync_prefile)
-        # elif sync_profile['interlayer_type'] == 'LayerGIFT':
-        #     self.sync_manager = LayerGIFT_Manager(self.model, sync_prefile)
+        elif sync_profile['interlayer_type'] == 'LinearCAS':
+            self.sync_manager = LinearCAS_Manager(self.model, sync_prefile)
         else:
             self.sync_manager = Sync_Manager(self.model, sync_prefile)
         self.rank = sync_profile['dist_profile']['rank']
@@ -83,11 +83,8 @@ class Client():
                 self.loss_func(self.model(b_x)+1e-8, b_y).backward()
                 self.optimizer.step()
                 if self.sync_manager.try_sync_model(self.iter_id):
-                    if self.iter_id % 64 == 0 and self.rank == 0:
-                        t1 = time.time()
+                    if self.iter_id % (max(64, self.sync_frequency)) == 0 and self.rank == 0:
                         accuracy = self.test()
-                        t2 = time.time()
-                        self.logging('test_time: %.4f' % (t2-t1))
                         self.logging(' - test - iter_id: %d; epoch_id: %d, round_id: %d; accuracy: %.4f;' % (self.iter_id, self.epoch_id, self.sync_manager.sync_round_id, accuracy))
                     # numpy.save('./NPY/param_client_%d_epoch_%d' % (self.rank, epoch_id), list(self.model.parameters())[0][0][0].detach().cpu().numpy())
                         self.model_manager.save_model(self.sync_manager.sync_round_id)

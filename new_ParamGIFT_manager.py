@@ -295,7 +295,7 @@ class ParamGIFT_Interlayer():
                 self.positive_grad_ema[mask] = 0
                 self.negative_grad_ema[mask] = 0
                 # self.window_start_round.fill_(self.round)
-                self.min_grad_consistency.fill_(1)
+                self.min_grad_consistency[mask] = 1
                 # self.min_average_start_round = self.round
 
     def restore_model_from_tensor_received(self):
