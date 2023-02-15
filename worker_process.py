@@ -4,10 +4,10 @@ import sys, os, argparse, copy, numpy, pprint, datetime, time
 from model_manager import Model_Manager
 from dataset_manager import Dataset_Manager
 from sync_manager import Sync_Manager
-# from ParamGIFT_manager import ParamGIFT_Manager
+from MultiProcess_CAS import ParamGIFT_Manager
 from LinearCAS_manager import LinearCAS_Manager
 # from free_ParamGIFT_manager import FreeParamGIFT_Manager
-from new_ParamGIFT_manager import ParamGIFT_Manager
+# from new_ParamGIFT_manager import ParamGIFT_Manager
 
 CUDA = torch.cuda.is_available()
 print("CUDA: ",CUDA)
