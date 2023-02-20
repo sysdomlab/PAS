@@ -17,4 +17,6 @@ ps -ef | grep "multiprocessing" | awk '{print $2}' | xargs kill -9
 # for i in $workers; do
 # 	command="ps -ef | grep `pwd` | grep "[t]rial_no=$1" | awk '{print \$2}' | xargs kill -9"
 # 	ssh $i $command
+# 	command="ps -ef | grep 'multiprocessing' | awk '{print \$2}' | xargs kill -9"
+# 	ssh $i $command
 # done

@@ -225,14 +225,18 @@ class Sync_Manager():
 
     def try_sync_model(self, iter_id):
         """ Conduct remote synchronization. """
+        t1 = time.time()
         flattened_tensor_to_transmit = self.transmit_interlayer.generate_flattened_tensor_to_transmit(iter_id)
         if len(flattened_tensor_to_transmit) != 0:
+            t2 = time.time()
+            self.logging('generate_time: %.4f' % (t2-t1))
             self.sync_round_id += 1
             if CUDA: flattened_tensor_to_transmit = flattened_tensor_to_transmit.cpu()
-            self.logging('sync_start')
+            t1 = time.time()
             tensor_received = self.connection.root.aggregate(self.rank, self.sync_round_id, flattened_tensor_to_transmit)
             tensor_received = rpyc.classic.obtain(tensor_received).cuda() if CUDA else rpyc.classic.obtain(tensor_received)
-            self.logging('sync_end')
+            t2 = time.time()
+            self.logging('sync_time: %.4f' % (t2-t1))
             self.transmit_interlayer.restore_model_from_tensor_received(tensor_received)
             return True
         return False
