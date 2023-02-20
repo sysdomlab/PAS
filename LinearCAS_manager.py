@@ -1,177 +1,80 @@
 import torch
-import rpyc
 import copy, sys, numpy, math, datetime, pprint, time
-import queue
-import torch.multiprocessing as mp
+import threading, queue
 try:
     import torch.distributed.deprecated as dist
 except ImportError:
     import torch.distributed as dist
 
-print(mp.get_start_method())
-# mp.set_start_method('forkserver', force=True)
 CUDA = torch.cuda.is_available()
 
 ParamGIFTProfile = {
-    'ema_theta': 0.9,
+    'ema_theta': 0.7,
     'observe_window_size': 5,
-    'total_group_size': int(math.log2(128))+2,
 }
 
-
-class Sync_Process(mp.Process):
-    def __init__(self, world_size, rank, init_method, gather_queue, restore_queue, mask_queue, grad_consistency_queue, tag_queue, index_queue, global_tune_tag) -> None:
-        super(Sync_Process, self).__init__()
+class Sync_Thread(threading.Thread):
+    def __init__(self, sync_param, mask, rank, world_size) -> None:
+        super(Sync_Thread, self).__init__()
+        self.sync_param = sync_param
+        self.mask = mask
         self.world_size = world_size
         self.rank = rank
-        self.init_method = init_method
-        self.flattened_params_length = 0
-        self.gather_queue = gather_queue
-        self.restore_queue = restore_queue
-        self.mask_queue = mask_queue
-        self.grad_consistency_queue = grad_consistency_queue
-        self.tag_queue = tag_queue
-        self.index_queue = index_queue
-        self.global_tune_tag = global_tune_tag
-
-        self.sum = 0
-
-        self.restore_tensor = None
-        self.ema_theta = ParamGIFTProfile['ema_theta']
-        self.positive_grad_ema = torch.zeros(self.flattened_params_length)
-        self.negative_grad_ema = torch.zeros(self.flattened_params_length)
-        self.logging('start_init')
-        self.init_dist()
-        self.logging('create Sync_Process')
-
-
+        global transmit_interlayer
+        self.ema_theta = transmit_interlayer.ema_theta
+        self.last_tensor_of_flattened_params = copy.deepcopy(transmit_interlayer.last_tensor_of_flattened_params)
 
     def run(self):
-        while True:
-            if not self.gather_queue.empty():
-                self.sync()
-            if self.sum == self.flattened_params_length:
-                self.restore_queue.put(self.restore_tensor)
-                self.sum = 0
-            if not self.tag_queue.empty():
-                self.tag_queue.get()  
-                if self.rank == 0:
-                    self.calculate()  
-                self.frequency_tune()
-                self.tune_global_frequency()
-            # time.sleep(1)
+        tensor_len = len(self.sync_param)
+        temp_tensor_received = torch.zeros(tensor_len)
+        tensor_list_received = [torch.zeros(tensor_len) for _ in range(self.world_size)] if self.rank == 0 else None
+        device = self.sync_param.device
+        if CUDA:
+            self.sync_param = self.sync_param.cpu()
+        if self.rank == 0:
+            dist.gather(self.sync_param, gather_list = tensor_list_received, dst=0)
+        else:
+            dist.gather(self.sync_param, dst=0) #老版本torch
+        if self.rank == 0:
+            temp_tensor_received = sum(tensor_list_received) / self.world_size
+        if self.rank == 0:
+            for i in range(self.world_size):
+                transmit_interlayer.tensor_list_received[i][self.mask] = tensor_list_received[i]
+        dist.broadcast(temp_tensor_received, src=0)
+        if CUDA:
+            temp_tensor_received = temp_tensor_received.to(device)
+        transmit_interlayer.received_tensor[self.mask] = temp_tensor_received
 
     def logging(self, string, hyperparameters=None):
-        print('['+str(datetime.datetime.now())+'] [Sync_Manager] [Sync_Process] '+str(string))
+        print('['+str(datetime.datetime.now())+'] [Sync_Manager] [Sync_Thread] '+str(string))
         if hyperparameters != None:
             pprint.pprint(hyperparameters)
         sys.stdout.flush()
 
-    def init_dist(self):
-        dist.init_process_group(backend='gloo', 
-                        init_method=self.init_method,
-                        world_size=self.world_size,
-                        rank=self.rank)
-        self.group = dist.new_group([ i for i in range(self.world_size)])
-        sync_param = self.gather_queue.get()
-        dist.broadcast(sync_param, src=0, group=self.group)
-        self.flattened_params_length = len(sync_param)
-        self.restore_tensor = copy.deepcopy(sync_param)
-        self.restore_queue.put(sync_param)
 
-    def sync(self):
-        sync_param = self.gather_queue.get()
-        self.logging(sync_param)
-        mask = self.mask_queue.get()
-        self.logging('next')
-        temp_len = len(sync_param)
-        if self.rank == 0:
-            sync_param_list = [torch.zeros(temp_len) for _ in range(self.world_size)]
-            self.logging('gather_start')
-            dist.gather(sync_param, gather_list = sync_param_list, dst=0, group=self.group)
-        else:
-            dist.gather(sync_param, dst=0, group=self.group)
-        self.logging('gather_finish')
-        if self.rank == 0:
-            sync_param = sum(sync_param_list) / self.world_size
-            self.pooling(sync_param_list, mask)
-        dist.broadcast(sync_param, src=0, group=self.group)
-        self.restore_tensor[mask] = sync_param
-        self.sum += temp_len
-
-    def pooling(self, sync_param_list, mask):
-        length = sync_param_list[0]
-        positive_grad = torch.zeros(length)
-        negative_grad = torch.zeros(length)
-        ''' pooling '''
-        for tensor_received in sync_param_list:
-            if CUDA:
-                tensor_received = tensor_received
-            grad_tensor = tensor_received - self.restore_tensor[mask]
-            positive_grad += torch.where(grad_tensor >= 0, grad_tensor, 0.0)
-            negative_grad -= torch.where(grad_tensor < 0, grad_tensor, 0.0)
-
-        ''' smoothing '''
-        self.positive_grad_ema[mask] = self.ema_theta*self.positive_grad_ema[mask] + (1 - self.ema_theta)*positive_grad
-        self.negative_grad_ema[mask] = self.ema_theta*self.negative_grad_ema[mask] + (1 - self.ema_theta)*negative_grad
-    
-    def calculate(self):
-        grad_consistency = abs(self.positive_grad_ema-self.negative_grad_ema) / (self.positive_grad_ema+self.negative_grad_ema)
-        self.grad_consistency_queue.put(grad_consistency)
-
-    def frequency_tune(self):
-        length = torch.tensor([0])
-        if self.rank == 0: 
-            index1 = self.index_queue.get()
-            length = torch.tensor([len(index1)])
-        dist.broadcast(length, src=0, group=self.group)
-        if self.rank == 0:
-            if length != 0:
-                dist.broadcast(index1, src=0, group=self.group)
-        else:
-            if length != 0:
-                index1 = torch.zeros([length[0],1],dtype=torch.long)
-                dist.broadcast(index1, src=0, group=self.group)
-            else:
-                index1 = torch.zeros([], dtype=torch.int64)
-            self.index_queue.put(index1)
-    
-    def tune_global_frequency(self):
-        if self.rank == 0: 
-            tune = self.global_tune_tag.get()
-            dist.broadcast(tune, src=0)
-        else: 
-            tune = torch.tensor([0])
-            dist.broadcast(tune, src=0)
-            self.global_tune_tag.put(tune)
-
-
-
-class ParamGIFT_Interlayer():
-    def __init__(self, model, sync_frequency, hyperparams, rank, world_size, init_method) -> None:
-        self.interlayer_type = 'ParamGIFT'
+class LinearCAS_Interlayer():
+    def __init__(self, model, sync_frequency, hyperparams, rank, world_size) -> None:
+        self.interlayer_type = 'LinearCAS'
         self.model = model
         self.sync_frequency = sync_frequency
         self.rank = rank
         self.world_size = world_size
-        self.init_method = init_method
         self.iter_id = 0
         self.round = 0
         self.sum_num_of_param = 0.0
-        self.frequency_list = []
-        i = 1
-        while i <= sync_frequency:
-            self.frequency_list.append(i)
-            i *= 2
+        self.frequency_list = [64, 54, 44, 34, 24, 14, 4, 1]
         print(self.frequency_list)
 
         """ Set hyper_parameters """
         self.ema_theta = hyperparams['ema_theta']
+        print('- CAS Hyperparameter Profile: ')
+        pprint.pprint(ParamGIFTProfile)
 
         """ Initialize model-structure-related variables """
         self.param_shape_list = []
         self.cutoff_index_list = []
         self.tensor_of_flattened_params = None
+        self.last_tensor_of_flattened_params = None
         self.frozen_tensor_of_flattened_params = None
         self.received_tensor = None
         self.flattened_params_length = -1
@@ -185,13 +88,7 @@ class ParamGIFT_Interlayer():
         self.param_sync_frequency = torch.full([self.flattened_params_length], sync_frequency).cuda() if CUDA else torch.full([self.flattened_params_length], sync_frequency)
         # self.next_sync_iter = sync_frequency
         self.max_frequency = sync_frequency
-        self.gather_queue = mp.Queue(10)
-        self.restore_queue = mp.Queue(10)
-        self.mask_queue = mp.Queue(10)
-        self.grad_consistency_queue = mp.Queue(1)
-        self.tag_queue = mp.Queue(1)
-        self.index_queue = mp.Queue(1)
-        self.global_tune_tag = mp.Queue(1)
+        self.threading_queue = queue.Queue()
         if self.rank == 0:
             self.max_observe_window_start = 0
             self.min_average_consistency = 1
@@ -202,20 +99,9 @@ class ParamGIFT_Interlayer():
             self.min_grad_consistency = torch.ones(self.flattened_params_length).cuda() if CUDA else torch.ones(self.flattened_params_length)
             self.positive_grad_ema = torch.zeros(self.flattened_params_length).cuda() if CUDA else torch.zeros(self.flattened_params_length)
             self.negative_grad_ema = torch.zeros(self.flattened_params_length).cuda() if CUDA else torch.zeros(self.flattened_params_length)
-            self.window_start_round = torch.zeros(self.flattened_params_length).cuda() if CUDA else torch.zeros(self.flattened_params_length)
+            self.window_start_iter = torch.zeros(self.flattened_params_length).cuda() if CUDA else torch.zeros(self.flattened_params_length)
             self.temp_mask1 = copy.deepcopy(self.mask)
             self.temp_mask2 = copy.deepcopy(self.mask)
-        self.logging('1')
-        if CUDA: self.tensor_of_flattened_params = self.tensor_of_flattened_params.cpu()
-        self.gather_queue.put(self.tensor_of_flattened_params)
-        self.sync_process = Sync_Process(self.world_size, self.rank, self.init_method, self.gather_queue, self.restore_queue, self.mask_queue, self.grad_consistency_queue, self.tag_queue, self.index_queue, self.global_tune_tag)
-        self.logging('creat_process_finish')
-        self.received_tensor = self.restore_queue.get().cuda() if CUDA else self.restore_queue.get()
-        self.restore_model_from_tensor_received()
-        self.sync_process.start()
-        self.logging('create CAS Interlayer')
-
-
 
     def logging(self, string, hyperparameters=None):
         print('['+str(datetime.datetime.now())+'] [Sync_Manager] [ParamGIFT_Interlayer] '+str(string))
@@ -235,6 +121,7 @@ class ParamGIFT_Interlayer():
             self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flatten_params),0)
         self.flattened_params_length = len(self.tensor_of_flattened_params)
         self.logging("Param_length: "+str(self.flattened_params_length))
+        self.last_tensor_of_flattened_params = copy.deepcopy(self.tensor_of_flattened_params)
         self.frozen_tensor_of_flattened_params = copy.deepcopy(self.tensor_of_flattened_params)
         self.received_tensor = copy.deepcopy(self.tensor_of_flattened_params)
         if self.rank == 0:
@@ -251,6 +138,8 @@ class ParamGIFT_Interlayer():
             self.freezing_mask.fill_(0)
         if len(self.freezing_mask.nonzero()) != 0:
             self.freezing()
+        if not self.threading_queue.empty() and threading.active_count() == 1:
+            self.threading_queue.get().start()
         if round_iter not in self.frequency_list:
             return 0
         self.tensor_of_flattened_params = torch.tensor([]).cuda() if CUDA else torch.tensor([])
@@ -264,38 +153,62 @@ class ParamGIFT_Interlayer():
             self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flattened_param), 0)
         self.frozen_tensor_of_flattened_params[self.mask] = self.tensor_of_flattened_params[self.mask]
         self.freezing_mask += self.mask
-        self.mask_queue.put(self.mask.cpu()) if CUDA else self.mask_queue.put(self.mask)
-        sync_param = self.tensor_of_flattened_params[self.mask].cpu() if CUDA else self.tensor_of_flattened_params[self.mask]
-        self.logging(sync_param.device)
-        self.gather_queue.put(sync_param)
+        self.threading_queue.put(Sync_Thread(self.tensor_of_flattened_params[self.mask], self.mask, self.rank, self.world_size))
         if round_iter == self.max_frequency:
-            self.received_tensor = self.restore_queue.get().cuda() if CUDA else self.restore_queue.get()
+            while not self.threading_queue.empty():
+                if threading.active_count() == 1:
+                    self.threading_queue.get().start()
+            while threading.active_count() != 1:
+                continue
+            if self.rank == 0:
+                self.pooling()
             return 1
         else:
             return 0
         
 
+    def pooling(self):
+        length = len(self.tensor_list_received[0])
+        positive_grad = torch.zeros(length).cuda() if CUDA else torch.zeros(length)
+        negative_grad = torch.zeros(length).cuda() if CUDA else torch.zeros(length)
+        zeros = torch.zeros(length).cuda() if CUDA else torch.zeros(length)
+        ''' pooling '''
+        for tensor_received in self.tensor_list_received:
+            if CUDA:
+                tensor_received = tensor_received.cuda()
+            grad_tensor = tensor_received - self.last_tensor_of_flattened_params
+            positive_grad += torch.where(grad_tensor >= 0, grad_tensor, zeros)
+            negative_grad -= torch.where(grad_tensor < 0, grad_tensor, zeros)
+
+        ''' smoothing '''
+        self.positive_grad_ema = self.ema_theta*self.positive_grad_ema + (1 - self.ema_theta)*positive_grad
+        self.negative_grad_ema = self.ema_theta*self.negative_grad_ema + (1 - self.ema_theta)*negative_grad
+
     def calculate_grad_consistency(self):
-        self.grad_consistency = self.grad_consistency_queue.get()
+        self.grad_consistency = abs(self.positive_grad_ema-self.negative_grad_ema) / (self.positive_grad_ema+self.negative_grad_ema)
         self.temp_mask1 = ((self.grad_consistency > self.min_grad_consistency) \
-                            & (self.grad_consistency < 0.3) & (self.param_sync_frequency > 1) \
-                            & (self.round > self.window_start_round + self.observe_window_size)).cuda() \
+                            & (self.grad_consistency < 0.1) \
+                            & (self.param_sync_frequency > 1) \
+                            & (self.iter_id > self.window_start_iter + self.observe_window_size * 64)).cuda() \
                             if CUDA else ((self.grad_consistency > self.min_grad_consistency) \
-                            & (self.grad_consistency < 0.3) & (self.param_sync_frequency > 1) \
-                            & (self.round > self.window_start_round + self.observe_window_size))
+                            & (self.grad_consistency < 0.1) \
+                            & (self.param_sync_frequency > 1) \
+                            & (self.iter_id > self.window_start_iter + self.observe_window_size * 64))
         self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency).cuda() \
                             if CUDA else (self.grad_consistency <= self.min_grad_consistency)
         # self.temp_mask3 = ((self.grad_consistency >= 0.5) & (self.param_sync_frequency < self.max_frequency) & (self.min_grad_consistency < 0.3))
         # self.window_start_iter[self.temp_mask3] = self.iter_id
-        self.param_sync_frequency[self.temp_mask1] //= 2
+        self.param_sync_frequency[self.temp_mask1] -= 20
         # self.temp_mask4 = self.temp_mask1 + self.temp_mask3
         self.min_grad_consistency[self.temp_mask1] = 1
         self.observe_window_size[self.temp_mask1] *= 2
         self.negative_grad_ema[self.temp_mask1] = 0
         self.positive_grad_ema[self.temp_mask1] = 0
-        self.window_start_round[self.temp_mask1] = self.round
-        self.window_start_round[self.temp_mask2] = self.round
+        self.window_start_iter[self.temp_mask1] = self.iter_id
+        self.window_start_iter[self.temp_mask2] = self.iter_id
         self.min_grad_consistency[self.temp_mask2] = self.grad_consistency[self.temp_mask2]
+        self.temp_mask3 = (self.param_sync_frequency == 0).cuda() if CUDA else (self.param_sync_frequency == 0)
+        self.param_sync_frequency[self.temp_mask3] = 1
         # self.param_sync_frequency[self.temp_mask3] *= 2
         # self.min_grad_consistency[self.temp_mask3] = 1
         # self.negative_grad_ema[self.temp_mask3] = 0
@@ -305,7 +218,9 @@ class ParamGIFT_Interlayer():
         
     def update_frequency(self, index1):
         if self.rank != 0: 
-            self.param_sync_frequency[index1] //= 2
+            self.param_sync_frequency[index1] -= 20
+            temp_mask = (self.param_sync_frequency == 0)
+            self.param_sync_frequency[temp_mask] = 1 
             # self.param_sync_frequency[index2] *= 2
 
     def freezing(self):
@@ -319,11 +234,12 @@ class ParamGIFT_Interlayer():
 
 
     def tune_max_frequency(self):
+        tune = torch.tensor([0])
         if self.rank == 0:
             j = self.sync_frequency
             ll = []
             gc_l = []
-            while j >= 1:
+            for j in self.frequency_list:
                 mask = (self.param_sync_frequency == j)
                 index = mask.nonzero()
                 l=len(index)
@@ -343,7 +259,6 @@ class ParamGIFT_Interlayer():
                     ll.append(0)
                     gc= 0
                 gc_l.append(round(float(gc),4))
-                j //= 2
             self.logging("sync_frequency_distribution: "+str(ll))
             self.logging("param_averaging_grad_consistency: "+str(gc_l))
             self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (self.iter_id, self.round, self.sum_num_of_param))
@@ -369,65 +284,84 @@ class ParamGIFT_Interlayer():
             
             # if self.average_consistency_stable_round + self.observe_window_size < self.iter_id:
             #     tune = torch.tensor([1])
-        
-        if self.rank == 0:
-            self.global_tune_tag.put(tune)
-        else:
-            tune = self.global_tune_tag.get()
+        dist.broadcast(tune, src=0)
         if tune == 1:
             mask = (self.param_sync_frequency == self.max_frequency)
             self.logging('tune max frequency')
-            self.max_frequency //= 2
-            self.param_sync_frequency[mask] //= 2
+            self.max_frequency -= 20
+            if self.max_frequency == 0: self.max_frequency = 1
+            self.param_sync_frequency[mask] = self.max_frequency
             if self.rank == 0:
-                self.observe_window_size[mask] *= 2
+                # self.observe_window_size[mask] *= 2
                 self.positive_grad_ema[mask] = 0
                 self.negative_grad_ema[mask] = 0
-                self.window_start_round.fill_(self.round)
-                self.min_grad_consistency.fill_(1)
-                self.min_average_start_round = self.round
+                # self.window_start_round.fill_(self.round)
+                self.min_grad_consistency[mask] = 1
+                # self.min_average_start_round = self.round
 
     def restore_model_from_tensor_received(self):
         """"""
+        self.last_tensor_of_flattened_params = copy.deepcopy(self.received_tensor)
         for i, param in enumerate(self.model.parameters()):
             param.data = self.received_tensor[self.cutoff_index_list[i][0]:self.cutoff_index_list[i][1]].view(self.param_shape_list[i])
 
 
-class ParamGIFT_Manager():
+class LinearCAS_Manager():
     def __init__(self, model, sync_profile) -> None:
         self.model = model
         self.sync_round_id = 0
+        self.world_size = -1
+        self.rank = -1
+        self.group = None
         self.sync_frequency = sync_profile['sync_frequency']
         self.interlayer_type = sync_profile['interlayer_type']
-        self.rank = sync_profile['rank']
-        self.transmit_interlayer = ParamGIFT_Interlayer(self.model, self.sync_frequency, self.rank, sync_profile['server_ip'], sync_profile['server_port'])
-
+        self.dist_profile = sync_profile['dist_profile']
+        self.init_dist(sync_profile['dist_profile'])
+        global transmit_interlayer
+        transmit_interlayer = LinearCAS_Interlayer(self.model, self.sync_frequency, ParamGIFTProfile, self.rank, self.world_size)
 
     def logging(self, string):
         print('['+str(datetime.datetime.now())+'] [ParamGIFT Manager] '+str(string))
         sys.stdout.flush()
+
+    def init_dist(self, dist_profile):
+        self.world_size = dist_profile['world_size'] # world_size is required in all_reduce averaging.
+        self.rank = dist_profile['rank']
+        dist.init_process_group(backend='tcp' if CUDA else 'gloo', 
+                                init_method=dist_profile['master_address'],
+                                world_size=dist_profile['world_size'],
+                                rank=dist_profile['rank'])
+        self.group = dist.new_group([ i for i in range(self.world_size)])
+        self.model = self.model.cpu() if CUDA else self.model
+        for param in self.model.parameters():
+            dist.broadcast(param.data, src=0, group=self.group)
+        self.model = self.model.cuda() if CUDA else self.model
         
 
     def try_sync_model(self, iter_id):
         """ Conduct remote synchronization. """
-        if self.transmit_interlayer.generate_flattened_tensor_to_transmit(iter_id) == 0:
+        if transmit_interlayer.generate_flattened_tensor_to_transmit(iter_id) == 0:
             return False
         self.sync_round_id += 1
         ''' [2]average '''
         if iter_id % 64 == 0:
-            self.transmit_interlayer.tag_queue.put(1)
+            length = torch.tensor([0])
             if self.rank == 0:
-                index1= self.transmit_interlayer.calculate_grad_consistency()
-                self.transmit_interlayer.index_queue.put(index1)
-            else:
-                tune_index = self.transmit_interlayer.index_queue.get().cuda() if CUDA else self.transmit_interlayer.index_queue.get()
-                self.transmit_interlayer.update_frequency(tune_index)
-            self.transmit_interlayer.tune_max_frequency()
+                index1= transmit_interlayer.calculate_grad_consistency()
+                length = torch.tensor([len(index1)])
+            dist.broadcast(length, src=0, group=self.group)
+            if length != 0:
+                if self.rank != 0: 
+                    index1 = torch.zeros([length[0],1],dtype=torch.long)
+                dist.broadcast(index1, src=0, group=self.group)
+                # dist.broadcast(index2, src=0, group=self.group)
+                transmit_interlayer.update_frequency(index1)
+            transmit_interlayer.tune_max_frequency()
 
         ''' [3]broadcast '''
         # t3 = time.time()
         # print("broadcast_time: %.4f" % (t4-t3))
-        self.transmit_interlayer.restore_model_from_tensor_received()
+        transmit_interlayer.restore_model_from_tensor_received()
         # t5 = time.time()
         # print("restore_time: %.4f" % (t5-t4))
 

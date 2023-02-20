@@ -39,7 +39,6 @@ class Client():
         else:
             self.sync_manager = Sync_Manager(self.model, sync_prefile)
 
-
     def logging(self, string):
         print('[' + str(datetime.datetime.now()) + '] [Client] ' + str(string))
         sys.stdout.flush()
