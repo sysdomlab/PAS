@@ -58,6 +58,7 @@ class Dataset_Manager():
             self.batch_size = dataset_profile['batch_size']
             self.training_dataset, self.testing_dataset, self.class_num = self.get_dataset()
             self.local_size = len(self.training_dataset) / self.world_size
+            self.logging(self.local_size/5)
             self.logging('create dataset')
 
     def logging(self, string, hyperparamiters=None):
@@ -105,25 +106,40 @@ class Dataset_Manager():
         torch.backends.cudnn.benchmark = False
 
     def get_dirichlet(self):
-        composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size)[self.partition_rank]
-        if self.partition_rank == 0:
-            self.logging(np.argmax(np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size),axis=1))
+        composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(10)), self.world_size)[self.partition_rank]
+        # if self.partition_rank == 0:
+        #     self.logging(np.argmax(np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size),axis=1))
         return (composition_ratio*self.local_size).astype(int)
 
     def get_index_partition(self):
         local_idxs = []
+        class_list = []
         self.set_seed(0)
+        for i in range(self.world_size):
+            temp_list = []
+            for i in range(10):
+                temp_list.append(random.randint(1,self.class_num))
+            class_list.append(temp_list)
+        self.logging(class_list)
+        class_list = class_list[self.partition_rank]
         labels = np.array(self.training_dataset.targets)
         sorted_idxs = np.argsort(labels)
         composition = self.get_dirichlet()
         # print('local dataset composition: ' + str(composition))
         class_pool_size = int(len(self.training_dataset) / self.class_num)
-        for i in range(len(composition)):
+        for i in range(len(class_list)):
             for j in range(composition[i]):
-                sample_index = sorted_idxs[int(class_pool_size*random.random()) + class_pool_size*i] # randomly sampling
+                sample_index = sorted_idxs[int(class_pool_size*random.random()) + class_pool_size*(class_list[i]-1)] # randomly sampling
                 # sample_index = sorted_idxs[(class_pool_size/self.world_size*self.rank+j) % class_pool_size + class_pool_size*i]
                 local_idxs.append(sample_index)
         return local_idxs
+
+    # def get_index_partition(self):
+    #     labels = np.array(self.training_dataset.targets) #pytorch老版本train_labels，新版本targets
+    #     idxs = np.argsort(labels)
+    #     each_part_size = len(self.training_dataset) // self.world_size
+    #     return idxs[each_part_size*self.partition_rank : each_part_size*(self.partition_rank+1)]
+
 
     def get_training_dataloader(self):
         if self.is_iid:

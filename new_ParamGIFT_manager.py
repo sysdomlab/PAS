@@ -14,6 +14,7 @@ ParamGIFTProfile = {
     'total_group_size': int(math.log2(128))+2,
 }
 
+
 class Sync_Thread(threading.Thread):
     def __init__(self, sync_param, mask, rank, world_size) -> None:
         super(Sync_Thread, self).__init__()
@@ -322,8 +323,8 @@ class ParamGIFT_Manager():
     def init_dist(self, dist_profile):
         self.world_size = dist_profile['world_size'] # world_size is required in all_reduce averaging.
         self.rank = dist_profile['rank']
-        dist.init_process_group(backend='tcp' if CUDA else 'gloo', 
-                                init_method=dist_profile['master_address'],
+        dist.init_process_group(backend='gloo', 
+                                init_method=self.dist_profile['master_address'],
                                 world_size=dist_profile['world_size'],
                                 rank=dist_profile['rank'])
         self.group = dist.new_group([ i for i in range(self.world_size)])

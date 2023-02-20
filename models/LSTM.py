@@ -15,6 +15,7 @@ class LSTM_KWS(nn.Module):
         self.out = nn.Linear(64,10)
 
     def forward(self,x):
+        self.rnn.flatten_parameters()
         r_out, (h_n, h_c) = self.rnn(x, None)
         out = self.out(r_out[:,-1,:])
         return out

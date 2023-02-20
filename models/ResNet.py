@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 import torchsummary
 import copy
+from pytorchcv.model_provider import get_model as ptcv_get_model
 
 class ResidualBlock(nn.Module):
     def __init__(self, inchannel, outchannel, stride=1, size=[]):
@@ -74,12 +75,57 @@ class ResNet(nn.Module):
         # print('forward')
         return out
 
+class ResNet4Cifar(nn.Module):
+    def __init__(self, block, num_block, num_classes=10):
+        super().__init__()
+        self.in_channels = 16
+        self.conv1 = nn.Sequential(
+            nn.Conv2d(3, 16, kernel_size=3, padding=1, bias=False),
+            # nn.BatchNorm2d(16),
+            nn.LayerNorm([32, 32], elementwise_affine=False),
+            nn.ReLU(inplace=True))
+        # we use a different inputsize than the original paper
+        # so conv2_x's stride is 1
+        self.conv2_x = self._make_layer(block, 16, 3, 1, [32,32])
+        self.conv3_x = self._make_layer(block, 32, 3, 2, [32,32])
+        self.conv4_x = self._make_layer(block, 64, 3, 2, [16,16])
+        self.avg_pool = nn.AdaptiveAvgPool2d((1, 1))
+        self.fc = nn.Linear(64, num_classes)
+
+    def _make_layer(self, block, out_channels, num_blocks, stride, size):
+        strides = [stride] + [1] * (num_blocks - 1)
+        layers = []
+        for stride in strides:
+            layers.append(block(self.in_channels, out_channels, stride, size))
+            if stride == 2:
+                size[0] //= 2
+                size[1] //= 2
+            self.in_channels = out_channels
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        output = self.conv1(x)
+        output = self.conv2_x(output)
+        output = self.conv3_x(output)
+        output = self.conv4_x(output)
+        output = self.avg_pool(output)
+        output = output.view(output.size(0), -1)
+        output = self.fc(output)
+        return output
+
+def resnet20(num_classes=10, **kargs):
+    """ return a ResNet 20 object
+    """
+    return ResNet4Cifar(ResidualBlock, [3, 3, 3], num_classes=num_classes)
+
+
 def ResNet18_Cifar10():
-    return ResNet(ResidualBlock)
+    return ResNet4Cifar(ResidualBlock, [3, 3, 3], num_classes=10)
+    # return ptcv_get_model("resnet20_cifar10")
 
 if __name__ == '__main__':
-    model = ResNet18_Cifar10()
+    model = resnet20().cuda()
     torchsummary.summary(model,(3,32,32))
-    input = torch.ones([1,3,32,32])
+    input = torch.ones([1,3,32,32]).cuda()
     output = model(input)
     print(output.size())

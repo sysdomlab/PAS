@@ -1,5 +1,6 @@
 import torch
-import copy, sys, numpy, math, datetime, pprint, time
+import rpyc
+import copy, sys, numpy, math, datetime, pprint, time, os
 try:
     import torch.distributed.deprecated as dist
 except ImportError:
@@ -133,11 +134,12 @@ class GIFT_Interlayer():
               
 
 class Default_Interlayer():
-    def __init__(self, model, sync_frequency) -> None:
+    def __init__(self, model, rank, init_period) -> None:
         self.interlayers_type = 'Default'
         self.model = model
         self.round = 0
-        self.sync_frequency = sync_frequency
+        self.rank = rank
+        self.init_period = init_period
         self.param_shape_list = []
         self.cutoff_index_list = []
         self.tensor_of_flattened_params = None
@@ -167,7 +169,7 @@ class Default_Interlayer():
 
     def generate_flattened_tensor_to_transmit(self, iter_id):
         """"""
-        if iter_id % self.sync_frequency != 0:
+        if iter_id % self.init_period != 0:
             return torch.tensor([])   #低版本pytorch不接受none
         # self.model = self.model.cpu() if CUDA else self.model # "tcp" can support gpu
         self.round += 1
@@ -176,8 +178,7 @@ class Default_Interlayer():
             flattened_param = p.data.view(-1)
             self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flattened_param),0)
         self.sum_num_of_param += self.flattened_params_length/1000000
-        if iter_id % 64 == 0:
-            self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (iter_id, self.round, self.sum_num_of_param))
+        if iter_id % max(self.init_period, 64) == 0: self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (iter_id, self.round, self.sum_num_of_param))
         return self.tensor_of_flattened_params
 
     def restore_model_from_tensor_received(self, tensor_received):
@@ -191,13 +192,16 @@ class Sync_Manager():
     def __init__(self, model, sync_profile) -> None:
         self.model = model
         self.sync_round_id = 0
-        self.world_size = -1
-        self.rank = -1
-        self.group = None
-        self.sync_frequency = sync_profile['sync_frequency']
+        self.rank = sync_profile['rank']
+        self.init_period = sync_profile['init_period']
         self.interlayer_type = sync_profile['interlayer_type']
-        self.init_dist(sync_profile['dist_profile'])
         self.transmit_interlayer = self.create_transmit_interlayer(sync_profile['interlayer_type'])
+
+        rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG
+        rpyc_config['allow_pickle'] = True
+        self.connection = rpyc.connect(sync_profile['server_ip'], sync_profile['server_port'], config=rpyc_config)
+
+        self.sync_init_model()
 
     def logging(self, string):
         print('['+str(datetime.datetime.now())+'] [Sync Manager] '+str(string))
@@ -206,65 +210,29 @@ class Sync_Manager():
     def create_transmit_interlayer(self, interlayer_type):
         # self.model = self.model.cpu() if CUDA else self.model # "tcp" can support gpu
         if interlayer_type == 'Default':
-            transmit_interlayer = Default_Interlayer(self.model, self.sync_frequency)
-        if interlayer_type == 'GIFT':
-            transmit_interlayer = GIFT_Interlayer(self.model, self.sync_frequency, InterlayerProfileDict[interlayer_type], self.rank)
-        # if interlayer_type == 'ParamGIFT':
-        #     transmit_interlayer = ParamGIFT_Interlayer(self.model, self.sync_frequency, InterlayerProfileDict[interlayer_type], self.rank)
-        # self.model = self.model.cuda() if CUDA else self.model
+            transmit_interlayer = Default_Interlayer(self.model, self.rank, self.init_period)
         return transmit_interlayer
 
-    def init_dist(self, dist_profile):
-        self.world_size = dist_profile['world_size'] # world_size is required in all_reduce averaging.
-        self.rank = dist_profile['rank']
-        dist.init_process_group(backend='tcp' if CUDA else 'gloo', 
-                                init_method=dist_profile['master_address'],
-                                world_size=dist_profile['world_size'],
-                                rank=dist_profile['rank'])
-        self.group = dist.new_group([ i for i in range(self.world_size)])
-        self.model = self.model.cpu() if CUDA else self.model
-        for param in self.model.parameters():
-            dist.broadcast(param.data, src=0, group=self.group)
-        self.model = self.model.cuda() if CUDA else self.model
+    def sync_init_model(self):
+        self.tensor_of_flattened_params = torch.tensor([]).cuda() if CUDA else torch.tensor([])
+        for p in self.model.parameters():
+            flattened_param = p.data.view(-1)
+            self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flattened_param),0)
+        if CUDA: self.tensor_of_flattened_params = self.tensor_of_flattened_params.cpu()
+        tensor_to_restore = self.connection.root.sync_initial_model(self.rank, self.tensor_of_flattened_params)
+        tensor_to_restore = rpyc.classic.obtain(tensor_to_restore).cuda() if CUDA else rpyc.classic.obtain(tensor_to_restore)
+        self.transmit_interlayer.restore_model_from_tensor_received(tensor_to_restore)
 
     def try_sync_model(self, iter_id):
         """ Conduct remote synchronization. """
         flattened_tensor_to_transmit = self.transmit_interlayer.generate_flattened_tensor_to_transmit(iter_id)
         if len(flattened_tensor_to_transmit) != 0:
             self.sync_round_id += 1
-            tensor_len = len(flattened_tensor_to_transmit)
-            tensor_received = torch.zeros(tensor_len)
-            tensor_list_received = [torch.zeros(tensor_len) for _ in range(self.world_size)] if self.rank == 0 else None
-
-            # self.model = self.model.cpu() if CUDA else self.model # "tcp" can support gpu
-
-            ''' [1]gather '''
-            # self.logging('sync start')
-            if CUDA:
-                flattened_tensor_to_transmit = flattened_tensor_to_transmit.cpu()
-            # print("transfer_time: %.4f" % (t3-t1))
-            # print(len(flattened_tensor_to_transmit))
-            # print(flattened_tensor_to_transmit.dtype)
-            if self.rank == 0:
-                dist.gather(flattened_tensor_to_transmit, gather_list = tensor_list_received, dst=0, group=self.group)
-            else:
-                dist.gather(flattened_tensor_to_transmit, dst=0, group=self.group) #老版本torch
-
-            ''' [2]average '''
-            if self.rank == 0:
-                tensor_received = sum(tensor_list_received) / self.world_size
-                if (self.interlayer_type == 'GIFT' or self.interlayer_type == 'ParamGIFT') and iter_id % self.sync_frequency == 0: # constrain
-                # if (self.interlayer_type == 'GIFT' or self.interlayer_type == 'ParamGIFT'): # free
-                    self.transmit_interlayer.calculate_grad_consistency(tensor_list_received)
-                # t3 = time.time()
-                # print("calculate_time: %.4f" % (t3-t2))
-
-            ''' [3]broadcast '''
-            dist.broadcast(tensor_received, src=0, group=self.group)
-            if CUDA:
-                tensor_received = tensor_received.cuda()
-            # self.logging('sync end')
+            if CUDA: flattened_tensor_to_transmit = flattened_tensor_to_transmit.cpu()
+            self.logging('sync_start')
+            tensor_received = self.connection.root.aggregate(self.rank, self.sync_round_id, flattened_tensor_to_transmit)
+            tensor_received = rpyc.classic.obtain(tensor_received).cuda() if CUDA else rpyc.classic.obtain(tensor_received)
+            self.logging('sync_end')
             self.transmit_interlayer.restore_model_from_tensor_received(tensor_received)
-
             return True
         return False
