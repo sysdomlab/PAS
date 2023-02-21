@@ -38,8 +38,8 @@ dataset="KWS"
 # dataset="Cifar10"
 
 ### interlayer type
-interlayer_type="Default"
-# interlayer_type="CAS"
+# interlayer_type="Default"
+interlayer_type="CAS"
 
 ### --- launch server process
 command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/server_process.py \

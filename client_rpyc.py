@@ -203,7 +203,6 @@ class CAS_Interlayer():
 
         self.mask_queue.put(self.mask.cpu()) if CUDA else self.mask_queue.put(self.mask)
         self.period_queue.put(round_iter)
-        sync_param = self.tensor_of_flattened_params[self.mask].cpu() if CUDA else self.tensor_of_flattened_params[self.mask]
         t1 = time.time()
         self.transmit_queue.put(self.tensor_of_flattened_params[self.mask].cpu()) if CUDA \
             else self.transmit_queue.put(self.tensor_of_flattened_params[self.mask])
