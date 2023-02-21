@@ -1,13 +1,13 @@
 #!/usr/bin/env bash
 home=$HOME'/CASP-code'
-workers='18.167.0.57 18.163.188.30 18.162.44.220 43.198.95.97 16.163.156.117 18.162.123.143 18.162.44.79 18.167.134.169 43.198.96.81 18.163.24.92 16.163.1.98 18.162.120.27 18.167.51.97 43.198.95.178 18.162.43.201 18.163.194.43 18.162.142.216 16.162.88.146 43.198.90.67 18.167.165.118'
+clients='18.162.55.161 18.166.67.172 18.163.77.191 16.163.40.18 18.163.50.185 18.162.116.86 18.163.73.147 18.162.114.6 43.198.24.254 16.163.103.16 18.163.129.160 43.198.74.74 18.163.8.137 18.166.78.151 18.166.54.95 18.167.109.223 18.166.51.117 18.163.121.81 43.198.19.64 18.163.123.206'
 
 log_dir=$home/Logs/bandwidth_limit
 mkdir -p $log_dir
 
 bandwidth=5120
 num=0
-for i in $workers; do
+for i in $clients; do
     command="sudo $HOME/wondershaper/wondershaper -a ens5 -u $bandwidth -d $bandwidth && speedtest"
     # command="sudo $HOME/wondershaper/wondershaper -c -a ens5"
     nohup ssh $i $command > $log_dir/worker_$num.log 2>&1 &
