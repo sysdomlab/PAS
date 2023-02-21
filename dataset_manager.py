@@ -147,8 +147,8 @@ class Dataset_Manager():
                     if l[2*i]/single_class_parts == l[2*i+1]/single_class_parts: a += 1
                 self.logging('bad_partition: %d' % a)
             each_part_size = len(self.training_dataset) // (2 * self.world_size)
-            idxs = idxs[each_part_size*l[2*self.partition_rank] : each_part_size*(l[2*self.partition_rank]+1)] + idxs[each_part_size*l[2*self.partition_rank+1] : each_part_size*(l[2*self.partition_rank+1]+1)]
-            return idxs
+            final_idxs = idxs[each_part_size*l[2*self.partition_rank] : each_part_size*(l[2*self.partition_rank]+1)] + idxs[each_part_size*l[2*self.partition_rank+1] : each_part_size*(l[2*self.partition_rank+1]+1)]
+            return final_idxs
         else:
             each_part_size = len(self.training_dataset) // self.world_size
             return idxs[each_part_size*self.partition_rank : each_part_size*(self.partition_rank+1)]
