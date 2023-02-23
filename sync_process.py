@@ -27,14 +27,14 @@ class Sync_Service(Service):
         sys.stdout.flush()
 
     def exposed_sync_initial_model(self, tensor_to_transmit, init_period):
+        self.init_period = init_period
         tensor_to_transmit = rpyc.classic.obtain(tensor_to_transmit)
         self.flattened_params_length = len(tensor_to_transmit)
         tensor_to_restore = self.connection.root.sync_initial_model(self.rank, self.init_period, tensor_to_transmit)
         tensor_to_restore = rpyc.classic.obtain(tensor_to_restore)
-        self.flattened_tenosr_to_restore = copy.deepcopy(tensor_to_restore)
+        self.flattened_tensor_to_restore = copy.deepcopy(tensor_to_restore)
         self.mask = torch.zeros(self.flattened_params_length, dtype=torch.bool)
         self.round_id += 1
-        self.init_period = init_period
         return tensor_to_restore
 
     def exposed_sync(self, tensor_to_transmit, mask, temp_period):

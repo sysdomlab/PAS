@@ -3,10 +3,10 @@
 home=$HOME'/CASP-code'
 
 ### prepare master and workers
-# master='18.167.0.57'
-server='18.167.0.57'
-clients='18.162.55.161 18.166.67.172 18.163.77.191 16.163.40.18 18.163.50.185 18.162.116.86 18.163.73.147 18.162.114.6 43.198.24.254 16.163.103.16 18.163.129.160 43.198.74.74 18.163.8.137 18.166.78.151 18.166.54.95 18.167.109.223 18.166.51.117 18.163.121.81 43.198.19.64 18.163.123.206'
-# clients='localhost localhost localhost localhost'
+server='localhost'
+# server='18.167.0.57'
+# clients='18.162.55.161 18.166.67.172 18.163.77.191 16.163.40.18 18.163.50.185 18.162.116.86 18.163.73.147 18.162.114.6 43.198.24.254 16.163.103.16 18.163.129.160 43.198.74.74 18.163.8.137 18.166.78.151 18.166.54.95 18.167.109.223 18.166.51.117 18.163.121.81 43.198.19.64 18.163.123.206'
+clients='localhost localhost'
 
 echo 'Server_host: '$server
 echo 'Client_hosts: '$clients
@@ -57,28 +57,26 @@ dirichlet_alpha=0.5
 ### --- launch sync process
 if [ "$interlayer_type" = "CAS" ]; then
     num=0
-    for i in $client; do
+    for i in $clients; do
         command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/sync_process.py \
             --server_ip=$server --server_port=$((20000+trial_no)) --rank=$num \
-            --port=$((30000+trial_no)) --remarks=$remarks --trial_no=$trial_no"
+            --port=$((30000+ trial_no + 10*num)) --remarks=$remarks --trial_no=$trial_no"
         echo $command
-        nohup ssh $i $command > $log_dir/sync_process_$num.log 2>&1 &
+        nohup ssh $i $command >> $log_dir/client_process_$num.log 2>&1 &
         num=$((num+1))
     done
-    sleep 1
-
-
     ### --- launch client process
     num=0
     for i in $clients; do
-        command="python3 $home/worker_process.py --sync_process_port=$((30000+trial_no))\
+        command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/worker_process.py \
+            --sync_process_port=$((30000 + trial_no + 10*num))\
             --server_ip=$server --server_port=$((20000+trial_no)) --rank=$num \
             --world_size=$world_size --remarks=$remarks --trial_no=$trial_no \
             --model=$model --dataset=$dataset --interlayer_type=$interlayer_type \
             --batchsize=$batchsize --init_period=$init_period \
             --dirichlet_alpha=$dirichlet_alpha"
         echo $command
-        nohup ssh $i $command > $log_dir/client_process_$num.log 2>&1 &
+        nohup ssh $i $command >> $log_dir/client_process_$num.log 2>&1 &
         num=$((num+1))
     done
 else 
@@ -86,7 +84,7 @@ else
     num=0
     for i in $clients; do
         command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/worker_process.py \
-            --sync_process_port=$((30000+trial_no))\
+            --sync_process_port=$((30000 + trial_no + 10*num))\
             --server_ip=$server --server_port=$((20000+trial_no)) --rank=$num \
             --world_size=$world_size --remarks=$remarks --trial_no=$trial_no \
             --model=$model --dataset=$dataset --interlayer_type=$interlayer_type \

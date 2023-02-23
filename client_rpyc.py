@@ -67,7 +67,7 @@ class CAS_Interlayer():
             self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flatten_params),0)
         tensor_to_restore = self.connection.root.sync_initial_model(self.tensor_of_flattened_params.cpu(), self.init_period) \
             if CUDA else self.connection.root.sync_initial_model(self.tensor_of_flattened_params, self.init_period)
-        self.received_tensor = rpyc.classic.obtain(tensor_to_restore.cuda()) if CUDA else rpyc.classic.obtain(tensor_to_restore)
+        self.received_tensor = rpyc.classic.obtain(tensor_to_restore).cuda() if CUDA else rpyc.classic.obtain(tensor_to_restore)
         self.restore_model_from_tensor_received()
         self.flattened_params_length = len(self.tensor_of_flattened_params)
         self.logging("Param_length: "+str(self.flattened_params_length))
@@ -101,13 +101,13 @@ class CAS_Interlayer():
 
 
         t1 = time.time()
-        self.connection.root.sync(self.tensor_of_flattened_params[self.mask].cpu(), self.mask, round_iter) \
+        self.connection.root.sync(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
             if CUDA else self.connection.root.sync(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
         t2 = time.time()
         self.logging('put_time: %.4f' % (t2-t1))
         if round_iter == self.global_period:
-            received_tensor = self.connection.get_restore_tensor()
-            self.received_tensor = rpyc.classic.obtain(received_tensor).cpu() if CUDA else rpyc.classic.obtain(received_tensor)
+            received_tensor = self.connection.root.get_restore_tensor()
+            self.received_tensor = rpyc.classic.obtain(received_tensor).cuda() if CUDA else rpyc.classic.obtain(received_tensor)
             return 1
         else:
             return 0
@@ -153,7 +153,7 @@ class CAS_Manager():
         self.init_period = sync_profile['init_period']
         self.interlayer_type = sync_profile['interlayer_type']
         self.rank = sync_profile['rank']
-        self.transmit_interlayer = CAS_Interlayer(self.model, self.init_period, self.rank, sync_profile['sync_precess_port'])
+        self.transmit_interlayer = CAS_Interlayer(self.model, self.init_period, self.rank, sync_profile['sync_process_port'])
 
 
     def logging(self, string):
