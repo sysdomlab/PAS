@@ -1,15 +1,11 @@
 import torch
 import rpyc
 import copy, sys, numpy, math, datetime, pprint, time, io
-import pickle
-import torch.multiprocessing as mp
 try:
     import torch.distributed.deprecated as dist
 except ImportError:
     import torch.distributed as dist
 
-mp.set_start_method('spawn', force=True)
-print(mp.get_start_method())
 CUDA = torch.cuda.is_available()
 
 ParamGIFTProfile = {
@@ -18,92 +14,8 @@ ParamGIFTProfile = {
 }
 
 
-class Sync_Process(mp.Process):
-    def __init__(self, server_ip, server_port, rank, init_period, transmit_queue, period_queue, restore_queue, mask_queue, update_period_tag, update_index_queue) -> None:
-        super(Sync_Process, self).__init__()
-        ''' sync variables '''
-        self.rank = rank
-        self.round_id = 1
-        self.round_transmit_param_volume = 0
-        self.flattened_params_length = 0
-        self.flattened_tenosr_to_restore = None
-        self.mask = None
-        self.server_ip = server_ip
-        self.server_port = server_port
-        self.init_period = init_period
-
-        ''' queues(processes common memory) '''
-        self.transmit_queue = transmit_queue
-        self.period_queue = period_queue
-        self.restore_queue = restore_queue
-        self.mask_queue = mask_queue
-        self.update_period_tag = update_period_tag
-        self.update_index_queue = update_index_queue
-
-        self.logging(' create sync process successfully ')
-
-    def run(self):
-        rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG
-        rpyc_config['allow_pickle'] = True
-        self.connection = rpyc.connect(self.server_ip, self.server_port, config=rpyc_config)
-
-        self.sync_initial_model(self.init_period)
-        while True:
-            if not self.transmit_queue.empty():
-                self.sync()
-            if not self.update_period_tag.empty():
-                self.update_period_tag.get()
-                self.update_period()
-            time.sleep(0.01)
-
-    def logging(self, string, hyperparameters=None):
-        print('['+str(datetime.datetime.now())+'] [Sync_Manager] [Sync_Process] '+str(string))
-        if hyperparameters != None:
-            pprint.pprint(hyperparameters)
-        sys.stdout.flush()
-
-    def sync_initial_model(self, init_period):
-        tensor_to_transmit = self.transmit_queue.get()
-        self.flattened_params_length = len(tensor_to_transmit)
-        tensor_to_restore = self.connection.root.sync_initial_model(self.rank, init_period, tensor_to_transmit)
-        tensor_to_restore = rpyc.classic.obtain(tensor_to_restore)
-        self.flattened_tenosr_to_restore = copy.deepcopy(tensor_to_restore)
-        self.mask = torch.zeros(self.flattened_params_length, dtype=torch.bool)
-        self.restore_queue.put(tensor_to_restore)
-
-    def sync(self):
-        ''' aggregate '''
-        t1 = time.time()
-        tensor_to_transmit = self.transmit_queue.get()
-        t2 = time.time()
-        self.logging('get_time: %.4f' % (t2-t1))
-        temp_period = self.period_queue.get()
-        temp_len = len(tensor_to_transmit)
-        t1 = time.time()
-        tensor_to_restore = self.connection.root.aggregate(self.rank, self.round_id, tensor_to_transmit, temp_period)
-        tensor_to_restore = rpyc.classic.obtain(tensor_to_restore)
-        t2 = time.time()
-        self.logging('inner_sync_time: %.4f' % (t2-t1))
-        ''' restore '''
-        self.mask = self.mask_queue.get()
-        self.flattened_tenosr_to_restore[self.mask] = tensor_to_restore
-        self.round_transmit_param_volume += temp_len
-        if self.round_transmit_param_volume == self.flattened_params_length:
-            self.restore_queue.put(self.flattened_tenosr_to_restore)
-            self.round_transmit_param_volume = 0
-            self.round_id += 1
-
-    def update_period(self):
-        t1 = time.time()
-        update_index = self.connection.root.update_period(self.rank)
-        update_index = rpyc.classic.obtain(update_index)
-        t2 = time.time()
-        self.logging('inner_update_time: %.4f' % (t2-t1))
-        self.update_index_queue.put(update_index)
-        
-
 class CAS_Interlayer():
-    def __init__(self, model, init_period, rank, server_ip, server_port) -> None:
+    def __init__(self, model, init_period, rank, sync_process_port) -> None:
         ''' sync_variable '''
         self.model = model
         self.rank = rank
@@ -119,38 +31,22 @@ class CAS_Interlayer():
         self.received_tensor = None
         self.param_shape_list = []
         self.cutoff_index_list = []
+
+        ''' connect to the FL server '''
+        rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG
+        rpyc_config['allow_pickle'] = True
+        self.connection = rpyc.connect('localhost', sync_process_port, config=rpyc_config)
+
+        ''' init model '''
         self.init_model_structure_related_variables()
 
         self.param_sync_period = torch.full([self.flattened_params_length], self.global_period).cuda() if CUDA \
                                 else torch.full([self.flattened_params_length], self.global_period)
         self.mask = torch.zeros(self.flattened_params_length, dtype=torch.bool).cuda() if CUDA \
                     else torch.zeros(self.flattened_params_length, dtype=torch.bool)
-        self.freezing_mask = torch.zeros(self.flattened_params_length, dtype=torch.bool).cuda() if CUDA \
-                            else torch.zeros(self.flattened_params_length, dtype=torch.bool)
+        self.freezing_mask = copy.deepcopy(self.mask)
 
         self.period_list = [64, 32, 16, 8, 4, 2, 1]
-
-        ''' queues(processes common memory) '''
-        self.transmit_queue = mp.Queue(10)
-        self.period_queue = mp.Queue(10)
-        self.restore_queue = mp.Queue(10)
-        self.mask_queue = mp.Queue(10)
-        self.update_period_tag = mp.Queue(1)
-        self.update_index_queue = mp.Queue(1)
-
-        ''' create sync process '''
-        self.tensor_of_flattened_params = torch.tensor([]).cuda() if CUDA else torch.tensor([])
-        for param in self.model.parameters():
-            flattened_param = param.data.view(-1)
-            self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flattened_param), 0)
-        if CUDA: self.tensor_of_flattened_params = self.tensor_of_flattened_params.cpu()
-        self.transmit_queue.put(self.tensor_of_flattened_params)
-
-        self.sync_process = Sync_Process(server_ip, server_port, self.rank, init_period, self.transmit_queue, self.period_queue, \
-                                         self.restore_queue, self.mask_queue, self.update_period_tag, self.update_index_queue)
-        self.sync_process.start()
-        self.received_tensor = self.restore_queue.get().cuda() if CUDA else self.restore_queue.get()
-        self.restore_model_from_tensor_received()
 
 
     def logging(self, string, hyperparameters=None):
@@ -169,10 +65,13 @@ class CAS_Interlayer():
             self.cutoff_index_list.append([s_index, e_index])
             s_index = e_index
             self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flatten_params),0)
+        tensor_to_restore = self.connection.root.sync_initial_model(self.tensor_of_flattened_params.cpu(), self.init_period) \
+            if CUDA else self.connection.root.sync_initial_model(self.tensor_of_flattened_params, self.init_period)
+        self.received_tensor = rpyc.classic.obtain(tensor_to_restore.cuda()) if CUDA else rpyc.classic.obtain(tensor_to_restore)
+        self.restore_model_from_tensor_received()
         self.flattened_params_length = len(self.tensor_of_flattened_params)
         self.logging("Param_length: "+str(self.flattened_params_length))
         self.freezing_tensor_of_flattened_params = copy.deepcopy(self.tensor_of_flattened_params)
-        self.received_tensor = copy.deepcopy(self.tensor_of_flattened_params)
 
     def generate_flattened_tensor_to_transmit(self, iter_id):
         """"""
@@ -201,17 +100,14 @@ class CAS_Interlayer():
         self.freezing_mask += self.mask
 
 
-        self.mask_queue.put(self.mask.cpu()) if CUDA else self.mask_queue.put(self.mask)
-        self.period_queue.put(round_iter)
         t1 = time.time()
-        self.transmit_queue.put(self.tensor_of_flattened_params[self.mask].cpu()) if CUDA \
-            else self.transmit_queue.put(self.tensor_of_flattened_params[self.mask])
+        self.connection.root.sync(self.tensor_of_flattened_params[self.mask].cpu(), self.mask, round_iter) \
+            if CUDA else self.connection.root.sync(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
         t2 = time.time()
         self.logging('put_time: %.4f' % (t2-t1))
         if round_iter == self.global_period:
-            self.received_tensor = self.restore_queue.get().cuda() if CUDA else self.restore_queue.get()
-            t3 = time.time()
-            self.logging('outer_sync_time: %.4f' % (t3-t1))
+            received_tensor = self.connection.get_restore_tensor()
+            self.received_tensor = rpyc.classic.obtain(received_tensor).cpu() if CUDA else rpyc.classic.obtain(received_tensor)
             return 1
         else:
             return 0
@@ -219,8 +115,8 @@ class CAS_Interlayer():
 
         
     def update_period(self):
-        self.update_period_tag.put(1)
-        index = self.update_index_queue.get()
+        index = self.connection.root.update_period()
+        index = rpyc.classic.obtain(index)
         global_tune_tag = index[-1:]
         index = index[:-1].cuda() if CUDA else index[:-1]
         self.param_sync_period[index] //= 2
@@ -257,7 +153,7 @@ class CAS_Manager():
         self.init_period = sync_profile['init_period']
         self.interlayer_type = sync_profile['interlayer_type']
         self.rank = sync_profile['rank']
-        self.transmit_interlayer = CAS_Interlayer(self.model, self.init_period, self.rank, sync_profile['server_ip'], sync_profile['server_port'])
+        self.transmit_interlayer = CAS_Interlayer(self.model, self.init_period, self.rank, sync_profile['sync_precess_port'])
 
 
     def logging(self, string):

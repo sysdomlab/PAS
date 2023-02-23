@@ -105,6 +105,7 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('--server_ip', type=str, default='127.0.0.1')
     parser.add_argument('--server_port', type=str, default=20000)
+    parser.add_argument('--sync_process_port', type=str, default=30000)
     parser.add_argument('--world_size', type=int, default=5)
     parser.add_argument('--rank', type=int, default=0)
     parser.add_argument('--trial_no', type=int, default=0)
@@ -147,7 +148,8 @@ if __name__ == '__main__':
         'init_period' : args.init_period,
         'interlayer_type' : interlayer_type,
         'server_ip' : args.server_ip,
-        'server_port' : args.server_port
+        'server_port' : args.server_port,
+        'sync_process_port' : args.sync_process_port
         
     }
     print('- Sync Profile: ')

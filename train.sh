@@ -51,23 +51,53 @@ echo
 nohup ssh $server $command > $log_dir/server.log 2>&1 &
 sleep 1
 
-### --- launch client process
-num=0
-job=worker_process.py
 batchsize=64
 init_period=64
 dirichlet_alpha=0.5
-for i in $clients; do
-    command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/$job \
-        --server_ip=$server --server_port=$((20000+trial_no)) --rank=$num \
-        --world_size=$world_size --remarks=$remarks --trial_no=$trial_no \
-        --model=$model --dataset=$dataset --interlayer_type=$interlayer_type \
-        --batchsize=$batchsize --init_period=$init_period \
-        --dirichlet_alpha=$dirichlet_alpha"
-    echo $command
-    nohup ssh $i $command > $log_dir/client_$num.log 2>&1 &
-    num=$((num+1))
-done
+### --- launch sync process
+if [ "$interlayer_type" = "CAS" ]; then
+    num=0
+    for i in $client; do
+        command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/sync_process.py \
+            --server_ip=$server --server_port=$((20000+trial_no)) --rank=$num \
+            --port=$((30000+trial_no)) --remarks=$remarks --trial_no=$trial_no"
+        echo $command
+        nohup ssh $i $command > $log_dir/sync_process_$num.log 2>&1 &
+        num=$((num+1))
+    done
+    sleep 1
+
+
+    ### --- launch client process
+    num=0
+    for i in $clients; do
+        command="python3 $home/worker_process.py --sync_process_port=$((30000+trial_no))\
+            --server_ip=$server --server_port=$((20000+trial_no)) --rank=$num \
+            --world_size=$world_size --remarks=$remarks --trial_no=$trial_no \
+            --model=$model --dataset=$dataset --interlayer_type=$interlayer_type \
+            --batchsize=$batchsize --init_period=$init_period \
+            --dirichlet_alpha=$dirichlet_alpha"
+        echo $command
+        nohup ssh $i $command > $log_dir/client_process_$num.log 2>&1 &
+        num=$((num+1))
+    done
+else 
+    ### --- launch client process
+    num=0
+    for i in $clients; do
+        command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/worker_process.py \
+            --sync_process_port=$((30000+trial_no))\
+            --server_ip=$server --server_port=$((20000+trial_no)) --rank=$num \
+            --world_size=$world_size --remarks=$remarks --trial_no=$trial_no \
+            --model=$model --dataset=$dataset --interlayer_type=$interlayer_type \
+            --batchsize=$batchsize --init_period=$init_period \
+            --dirichlet_alpha=$dirichlet_alpha"
+        echo $command
+        nohup ssh $i $command > $log_dir/client_process_$num.log 2>&1 &
+        num=$((num+1))
+    done
+fi
+
 
 
 
