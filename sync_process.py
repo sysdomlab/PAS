@@ -37,10 +37,12 @@ class Sync_Service(Service):
         self.round_id += 1
         return tensor_to_restore
 
-    def exposed_sync(self, tensor_to_transmit, mask, temp_period):
+    def exposed_sync(self, receive_list, temp_period):
         ''' aggregate '''
-        tensor_to_transmit = rpyc.classic.obtain(tensor_to_transmit)
-        self.mask = rpyc.classic.obtain(mask)
+        self.logging('start')
+        receive_list = rpyc.classic.obtain(receive_list)
+        tensor_to_transmit = receive_list[0]
+        self.mask = receive_list[1]
         temp_len = len(tensor_to_transmit)
         # t1 = time.time()
         tensor_to_restore = self.connection.root.aggregate(self.rank, self.round_id, tensor_to_transmit, temp_period)
@@ -81,6 +83,7 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     print('Trial ID: ' + str(args.trial_no) + '; Exp Setup Remarks: ' + args.remarks + '\n')
+    sys.stdout.flush()
 
     service = Sync_Service(args.server_ip, args.server_port, args.rank)
     rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG

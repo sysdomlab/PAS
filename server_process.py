@@ -86,7 +86,7 @@ class CAS_AggregationService(Service):
         return self.averaged_tensor
 
     def exposed_aggregate(self, rank, round_id, tensor_received, temp_period):
-        # self.logging('receive rank %d, round_id %d' % (rank, round_id))
+        self.logging('receive rank %d, round_id %d' % (rank, round_id))
         tensor_received = rpyc.classic.obtain(tensor_received)
         received_length = len(tensor_received)
         self.lock.acquire()
@@ -127,7 +127,7 @@ class CAS_AggregationService(Service):
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
         
-        # self.logging('return rank %d, round_id %d' % (rank, round_id))
+        self.logging('return rank %d, round_id %d' % (rank, round_id))
         return self.averaged_tensor
     
     def exposed_update_period(self, rank):

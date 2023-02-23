@@ -48,7 +48,7 @@ command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/server_process.py \
 echo "launch server:"
 echo $command
 echo
-nohup ssh $server $command > $log_dir/server.log 2>&1 &
+nohup ssh $server $command >> $log_dir/server_process.log 2>&1 &
 sleep 1
 
 batchsize=64

@@ -36,6 +36,7 @@ class CAS_Interlayer():
         rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG
         rpyc_config['allow_pickle'] = True
         self.connection = rpyc.connect('localhost', sync_process_port, config=rpyc_config)
+        self.sync_fun = rpyc.async_(self.connection.root.sync)
 
         ''' init model '''
         self.init_model_structure_related_variables()
@@ -99,10 +100,11 @@ class CAS_Interlayer():
         self.freezing_tensor_of_flattened_params[self.mask] = self.tensor_of_flattened_params[self.mask]
         self.freezing_mask += self.mask
 
-
+        transmit_list = [self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu()]
         t1 = time.time()
-        self.connection.root.sync(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
-            if CUDA else self.connection.root.sync(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
+        # self.sync_fun(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
+        #     if CUDA else self.sync_fun(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
+        self.sync_fun(transmit_list, round_iter)
         t2 = time.time()
         self.logging('put_time: %.4f' % (t2-t1))
         if round_iter == self.global_period:
