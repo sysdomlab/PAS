@@ -61,11 +61,11 @@ class Sync_Service(Service):
         return self.flattened_tensor_to_restore
 
     def exposed_update_period(self):
-        t1 = time.time()
+        # t1 = time.time()
         update_index = self.connection.root.update_period(self.rank)
         update_index = rpyc.classic.obtain(update_index)
-        t2 = time.time()
-        self.logging('inner_update_time: %.4f' % (t2-t1))
+        # t2 = time.time()
+        # self.logging('inner_update_time: %.4f' % (t2-t1))
         return update_index
         
 

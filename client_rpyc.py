@@ -102,12 +102,12 @@ class CAS_Interlayer():
 
         transmit_list = [self.freezing_tensor_of_flattened_params[self.mask].cpu(),self.mask.cpu()] \
             if CUDA else [self.freezing_tensor_of_flattened_params[self.mask],self.mask]
-        t1 = time.time()
+        # t1 = time.time()
         # self.connection.root.sync(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
         #     if CUDA else self.connection.root.sync(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
         self.sync_fun(transmit_list, round_iter)
-        t2 = time.time()
-        self.logging('put_time: %.4f' % (t2-t1))
+        # t2 = time.time()
+        # self.logging('put_time: %.4f' % (t2-t1))
         if round_iter == self.global_period:
             received_tensor = self.connection.root.get_restore_tensor()
             self.received_tensor = rpyc.classic.obtain(received_tensor).cuda() if CUDA else rpyc.classic.obtain(received_tensor)
@@ -166,16 +166,16 @@ class CAS_Manager():
 
     def try_sync_model(self, iter_id):
         """ Conduct remote synchronization. """
-        t1 = time.time()
+        # t1 = time.time()
         if self.transmit_interlayer.generate_flattened_tensor_to_transmit(iter_id) == 0:
             return False
-        t2 = time.time()
-        self.logging('generate_time: %.4f' % (t2-t1))
+        # t2 = time.time()
+        # self.logging('generate_time: %.4f' % (t2-t1))
         self.sync_round_id += 1
         if iter_id % self.init_period == 0:
-            t1 = time.time()
+            # t1 = time.time()
             self.transmit_interlayer.update_period()
-            t2 = time.time()
-            self.logging('update_period_time: %.4f' % (t2-t1))
+            # t2 = time.time()
+            # self.logging('update_period_time: %.4f' % (t2-t1))
         self.transmit_interlayer.restore_model_from_tensor_received()
         return True
