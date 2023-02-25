@@ -8,8 +8,8 @@ mkdir -p $log_dir
 bandwidth=5120
 num=0
 for i in $clients; do
-    command="sudo $HOME/wondershaper/wondershaper -a ens5 -u $bandwidth -d $bandwidth && speedtest"
-    # command="sudo $HOME/wondershaper/wondershaper -c -a ens5"
+    # command="sudo $HOME/wondershaper/wondershaper -a ens5 -u $bandwidth -d $bandwidth && speedtest"
+    command="sudo $HOME/wondershaper/wondershaper -c -a ens5"
     nohup ssh $i $command > $log_dir/worker_$num.log 2>&1 &
     num=$((num+1))
 done

@@ -48,12 +48,12 @@ command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/server_process.py \
 echo "launch server:"
 echo $command
 echo
-nohup ssh $server $command > $log_dir/server.log 2>&1 &
+nohup ssh $server $command >> $log_dir/client_process_0.log 2>&1 &
 sleep 1
 
 batchsize=64
 init_period=64
-dirichlet_alpha=0.1
+dirichlet_alpha=0.3
 ### --- launch sync process
 if [ "$interlayer_type" = "CAS" ]; then
     num=0

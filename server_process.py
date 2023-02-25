@@ -210,7 +210,7 @@ class CAS_AggregationService(Service):
             self.ema_positive_grad[mask] = 0
             self.ema_negative_grad[mask] = 0
             self.min_grad_consistency[mask] = 1
-            self.window_start_round[mask] = self.round_id
+            # self.window_start_round[mask] = self.round_id
         
         return tune
         
