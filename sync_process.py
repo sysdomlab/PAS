@@ -13,7 +13,6 @@ class Sync_Service(Service):
         self.round_id = 0
         self.flattened_params_length = 0
         self.flattened_tensor_to_restore = None
-        self.mask = None
         self.init_period = 0
         self.round_transmit_param_volume = 0
 
@@ -37,10 +36,13 @@ class Sync_Service(Service):
         self.round_id += 1
         return tensor_to_restore
 
-    def exposed_sync(self, tensor_to_transmit, mask, temp_period):
+    def exposed_sync(self, transmit_list, temp_period):
         ''' aggregate '''
-        tensor_to_transmit = rpyc.classic.obtain(tensor_to_transmit)
-        self.mask = rpyc.classic.obtain(mask)
+        # tensor_to_transmit = rpyc.classic.obtain(tensor_to_transmit)
+        # self.mask = rpyc.classic.obtain(mask)
+        transmit_list = rpyc.classic.obtain(transmit_list)
+        tensor_to_transmit = transmit_list[0]
+        mask = transmit_list[1]
         temp_len = len(tensor_to_transmit)
         # t1 = time.time()
         tensor_to_restore = self.connection.root.aggregate(self.rank, self.round_id, tensor_to_transmit, temp_period)
@@ -48,7 +50,7 @@ class Sync_Service(Service):
         # t2 = time.time()
         # self.logging('inner_sync_time: %.4f' % (t2-t1))
         ''' restore '''
-        self.flattened_tensor_to_restore[self.mask] = tensor_to_restore
+        self.flattened_tensor_to_restore[mask] = tensor_to_restore
         self.round_transmit_param_volume += temp_len
 
     def exposed_get_restore_tensor(self):
