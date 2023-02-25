@@ -166,16 +166,16 @@ class CAS_Manager():
 
     def try_sync_model(self, iter_id):
         """ Conduct remote synchronization. """
-        # t1 = time.time()
+        t1 = time.time()
         if self.transmit_interlayer.generate_flattened_tensor_to_transmit(iter_id) == 0:
             return False
-        # t2 = time.time()
-        # self.logging('generate_time: %.4f' % (t2-t1))
+        t2 = time.time()
+        self.logging('generate_time: %.4f' % (t2-t1))
         self.sync_round_id += 1
         if iter_id % self.init_period == 0:
-            # t1 = time.time()
+            t1 = time.time()
             self.transmit_interlayer.update_period()
-            # t2 = time.time()
-            # self.logging('update_period_time: %.4f' % (t2-t1))
+            t2 = time.time()
+            self.logging('update_period_time: %.4f' % (t2-t1))
         self.transmit_interlayer.restore_model_from_tensor_received()
         return True

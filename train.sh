@@ -3,10 +3,10 @@
 home=$HOME'/CASP-code'
 
 ### prepare master and workers
-server='localhost'
-# server='16.162.205.1'
-# clients='18.166.60.194 18.167.19.71 43.198.12.123 18.162.53.5 18.166.226.17 43.198.83.225 43.198.82.166 18.163.74.111 16.163.140.163 18.166.176.179 18.163.186.67 18.166.71.104 18.163.99.181 43.198.80.32 18.166.152.143 18.163.116.47 18.167.19.13 18.163.37.52 16.162.137.3 18.166.59.154'
-clients='localhost localhost'
+# server='localhost'
+server='16.162.205.1'
+clients='18.166.60.194 18.167.19.71 43.198.12.123 18.162.53.5 18.166.226.17 43.198.83.225 43.198.82.166 18.163.74.111 16.163.140.163 18.166.176.179 18.163.186.67 18.166.71.104 18.163.99.181 43.198.80.32 18.166.152.143 18.163.116.47 18.167.19.13 18.163.37.52 16.162.137.3 18.166.59.154'
+# clients='localhost localhost'
 
 echo 'Server_host: '$server
 echo 'Client_hosts: '$clients
@@ -38,8 +38,8 @@ dataset="KWS"
 # dataset="Cifar10"
 
 ### interlayer type
-interlayer_type="Default"
-# interlayer_type="CAS"
+# interlayer_type="Default"
+interlayer_type="CAS"
 
 ### --- launch server process
 command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/server_process.py \
@@ -53,7 +53,7 @@ sleep 1
 
 batchsize=64
 init_period=64
-dirichlet_alpha=0.5
+dirichlet_alpha=0.1
 ### --- launch sync process
 if [ "$interlayer_type" = "CAS" ]; then
     num=0
