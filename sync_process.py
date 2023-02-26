@@ -42,8 +42,11 @@ class Sync_Service(Service):
         # tensor_to_transmit = rpyc.classic.obtain(tensor_to_transmit)
         # self.mask = rpyc.classic.obtain(mask)
         transmit_list = rpyc.classic.obtain(transmit_list)
+        self.logging('step2: %d' % temp_period)
         tensor_to_transmit = transmit_list[0]
+        self.logging('step3: %d' % temp_period)
         mask = transmit_list[1]
+        self.logging('step4: %d' % temp_period)
         temp_len = len(tensor_to_transmit)
         t1 = time.time()
         self.logging('inner_sync_start: %d' % temp_period)
