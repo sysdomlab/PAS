@@ -4,8 +4,8 @@ home=$HOME'/CASP-code'
 
 ### prepare master and workers
 server='localhost'
-# server='18.167.0.57'
-# clients='18.162.55.161 18.166.67.172 18.163.77.191 16.163.40.18 18.163.50.185 18.162.116.86 18.163.73.147 18.162.114.6 43.198.24.254 16.163.103.16 18.163.129.160 43.198.74.74 18.163.8.137 18.166.78.151 18.166.54.95 18.167.109.223 18.166.51.117 18.163.121.81 43.198.19.64 18.163.123.206'
+# server='16.162.205.1'
+# clients='43.198.12.27 43.198.79.213 18.166.59.134 18.163.120.150 18.163.184.182 43.198.81.171 16.162.109.47 18.162.210.241 18.166.30.27 43.198.86.185 18.167.19.119 16.162.122.212 16.163.144.7 16.163.147.237 18.166.75.251 43.198.17.53 18.163.119.213 16.162.143.92 18.162.154.1 16.162.163.97'
 clients='localhost localhost'
 
 echo 'Server_host: '$server
@@ -41,9 +41,14 @@ dataset="KWS"
 # interlayer_type="Default"
 interlayer_type="CAS"
 
+### sync setting
+batchsize=64
+init_period=64
+dirichlet_alpha=1
+
 ### --- launch server process
 command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/server_process.py \
-	--port=$((20000+trial_no)) --world_size=$world_size\
+	--port=$((20000+trial_no)) --world_size=$world_size  --init_period=$init_period \
 	--remarks=$remarks --trial_no=$trial_no --interlayer_type=$interlayer_type"
 echo "launch server:"
 echo $command
@@ -51,9 +56,6 @@ echo
 nohup ssh $server $command >> $log_dir/server_process.log 2>&1 &
 sleep 1
 
-batchsize=64
-init_period=64
-dirichlet_alpha=0.5
 ### --- launch sync process
 if [ "$interlayer_type" = "CAS" ]; then
     num=0

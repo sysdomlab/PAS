@@ -6,6 +6,7 @@ from rpyc import Service
 from rpyc.utils.server import ThreadedServer
 
 from threading import Lock
+from math import log2
 
 CUDA = torch.cuda.is_available()
 
@@ -15,7 +16,7 @@ CAS_hyperparams_profile = {
 }
 
 class CAS_AggregationService(Service):
-    def __init__(self, world_size) -> None:
+    def __init__(self, world_size, init_period) -> None:
         super().__init__()
         self.flattened_params_length = None
         self.world_size = world_size
@@ -23,8 +24,8 @@ class CAS_AggregationService(Service):
         self.eam_theta = CAS_hyperparams_profile['ema_theta']
         self.lock = Lock()
         self.round_id = 0
-        self.initial_period = 0
-        self.global_period = 0
+        self.initial_period = init_period
+        self.global_period = init_period
 
         self.param_sync_period = None
         self.last_tensor_received = None
@@ -52,8 +53,6 @@ class CAS_AggregationService(Service):
         self.lock.acquire()
         if self.first_has_arrived == 0:
             self.first_has_arrived = 1
-            self.initial_period = init_period
-            self.global_period = init_period
             self.flattened_params_length = len(tensor_received)
             self.averaged_tensor = torch.zeros(self.flattened_params_length)
 
@@ -86,7 +85,7 @@ class CAS_AggregationService(Service):
         return self.averaged_tensor
 
     def exposed_aggregate(self, rank, round_id, tensor_received, temp_period):
-        self.logging('receive rank %d, round_id %d' % (rank, round_id))
+        # self.logging('receive rank %d, round_id %d' % (rank, round_id))
         tensor_received = rpyc.classic.obtain(tensor_received)
         received_length = len(tensor_received)
         self.lock.acquire()
@@ -127,7 +126,7 @@ class CAS_AggregationService(Service):
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
         
-        self.logging('return rank %d, round_id %d' % (rank, round_id))
+        # self.logging('return rank %d, round_id %d' % (rank, round_id))
         return self.averaged_tensor
     
     def exposed_update_period(self, rank):
@@ -210,10 +209,9 @@ class CAS_AggregationService(Service):
             self.ema_positive_grad[mask] = 0
             self.ema_negative_grad[mask] = 0
             self.min_grad_consistency[mask] = 1
-            self.window_start_round[mask] = self.round_id
+            # self.window_start_round[mask] = self.round_id
         
         return tune
-        
 
 class Default_AggregationService(Service):
     def __init__(self, world_size):
@@ -231,7 +229,7 @@ class Default_AggregationService(Service):
         sys.stdout.flush()
 
     def exposed_sync_initial_model(self, rank, tensor_received):
-        self.logging('receive rank %d, sync_initial_model' % (rank))
+        # self.logging('receive rank %d, sync_initial_model' % (rank))
         tensor_received = rpyc.classic.obtain(tensor_received)
         print(tensor_received.device)
         self.lock.acquire()
@@ -261,7 +259,7 @@ class Default_AggregationService(Service):
 
 
     def exposed_aggregate(self, rank, round_id, tensor_received):
-        self.logging('receive rank %d, round_id %d' % (rank, round_id))
+        # self.logging('receive rank %d, round_id %d' % (rank, round_id))
         tensor_received = rpyc.classic.obtain(tensor_received)
         self.lock.acquire()
         if self.first_has_arrived == 0:
@@ -283,7 +281,7 @@ class Default_AggregationService(Service):
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
 
-        self.logging('return rank %d, round_id %d' % (rank, round_id))
+        # self.logging('return rank %d, round_id %d' % (rank, round_id))
         return self.averaged_tensor
 
 
@@ -296,13 +294,14 @@ if __name__ == "__main__":
     parser.add_argument('--trial_no', type=int, default=0)
     parser.add_argument('--remarks', type=str, default='Remarks Missing...')
     parser.add_argument('--interlayer_type', type=str, default='Defualt')
+    parser.add_argument('--init_period', type=int, default=128)
 
     args = parser.parse_args()
     print('Trial ID: ' + str(args.trial_no) + '; Exp Setup Remarks: ' + args.remarks + '\n')
     sys.stdout.flush()
 
     if args.interlayer_type == 'CAS':
-        service = CAS_AggregationService(args.world_size)
+        service = CAS_AggregationService(args.world_size, args.init_period)
     else:
         service = Default_AggregationService(args.world_size)
     rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG
