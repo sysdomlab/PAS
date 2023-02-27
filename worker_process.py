@@ -74,27 +74,14 @@ class Client():
             epoch_id += 1
             self.logging('start epoch: %d' % epoch_id)
             for step, (b_x, b_y) in enumerate(self.training_dataloader):
-                self.logging(b_x)
-                self.logging(b_y)
                 iter_id += 1
                 if CUDA:
                     b_x = b_x.cuda()
                     b_y = b_y.cuda()
                 self.optimizer.zero_grad()
                 # t1 = time.time()
-                out_put = self.model(b_x)
-                self.logging(out_put)
-                loss = self.loss_func(out_put,b_y)
-                self.logging(loss)
-                loss.backward()
-                # self.loss_func(self.model(b_x), b_y).backward()
+                self.loss_func(self.model(b_x), b_y).backward()
                 self.optimizer.step()
-                tensor_of_flattened_params = torch.tensor([]).cuda() if CUDA else torch.tensor([])
-                for p in self.model.parameters():
-                    flattened_param = p.data.view(-1)
-                    tensor_of_flattened_params = torch.cat((tensor_of_flattened_params, flattened_param),0)
-                self.logging(('iter_id: %d, step:' % iter_id)+str(step))
-                self.logging(tensor_of_flattened_params)
                 t2 = time.time()
                 # self.logging('training_time: %.4f' % (t2-t1))
                 # self.logging('finish local iteration: %d' % iter_id)

@@ -99,7 +99,6 @@ class CAS_Interlayer():
             self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flattened_param), 0)
         self.freezing_tensor_of_flattened_params[self.mask] = self.tensor_of_flattened_params[self.mask]
         self.freezing_mask += self.mask
-        self.logging(self.tensor_of_flattened_params)
         t1 = time.time()
         if iter_id % self.init_period == 0:
             self.connection.root.sync_and_update(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
@@ -146,7 +145,6 @@ class CAS_Interlayer():
 
     def restore_model_from_tensor_received(self):
         """"""
-        self.logging(self.received_tensor)
         for i, param in enumerate(self.model.parameters()):
             param.data = self.received_tensor[self.cutoff_index_list[i][0]:self.cutoff_index_list[i][1]].view(self.param_shape_list[i])
 

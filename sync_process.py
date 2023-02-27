@@ -23,7 +23,6 @@ def sync_thread(rank, round_id, tensor_to_transmit, mask, temp_period):
             if current_sync_period == 0: current_sync_period = period_queue.get()
             time.sleep(0.01)
         logging('start_sync: %d' % temp_period)
-        logging(tensor_to_transmit)
         t1 = time.time()
         tensor_to_restore = connection.root.aggregate(rank, round_id, tensor_to_transmit, temp_period)
         tensor_to_restore = rpyc.classic.obtain(tensor_to_restore)
@@ -48,11 +47,9 @@ def sync_and_update_thread(rank, round_id, tensor_to_transmit, mask, temp_period
         temp_list = rpyc.classic.obtain(temp_list)
         t2 = time.time()
         logging('inner_sync_time: %.4f' % (t2-t1))
-        logging(temp_list)
         current_sync_period = 0
         global flattened_tensor_to_restore
         flattened_tensor_to_restore[mask] = temp_list[0]
-        logging(flattened_tensor_to_restore)
         global update_index
         update_index = temp_list[1]
         temp_len = len(tensor_to_transmit)
@@ -85,7 +82,7 @@ class Sync_Service(Service):
         self.init_period = init_period
         tensor_to_transmit = rpyc.classic.obtain(tensor_to_transmit)
         self.flattened_params_length = len(tensor_to_transmit)
-        tensor_to_restore = connection.root.sync_initial_model(self.rank, self.init_period, tensor_to_transmit)
+        tensor_to_restore = connection.root.sync_initial_model(self.rank, tensor_to_transmit)
         tensor_to_restore = rpyc.classic.obtain(tensor_to_restore)
         global flattened_tensor_to_restore
         flattened_tensor_to_restore = copy.deepcopy(tensor_to_restore)
