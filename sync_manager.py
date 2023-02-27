@@ -179,6 +179,7 @@ class Default_Interlayer():
             self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flattened_param),0)
         self.sum_num_of_param += self.flattened_params_length/1000000
         if iter_id % max(self.init_period, 64) == 0: self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (iter_id, self.round, self.sum_num_of_param))
+        self.logging(self.tensor_of_flattened_params)
         return self.tensor_of_flattened_params
 
     def restore_model_from_tensor_received(self, tensor_received):
