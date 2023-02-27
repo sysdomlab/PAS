@@ -88,7 +88,7 @@ class Client():
                     tensor_of_flattened_params = torch.cat((tensor_of_flattened_params, flattened_param),0)
                 self.logging(('iter_id: %d, step:' % iter_id)+str(step))
                 self.logging(tensor_of_flattened_params)
-                # t2 = time.time()
+                t2 = time.time()
                 # self.logging('training_time: %.4f' % (t2-t1))
                 # self.logging('finish local iteration: %d' % iter_id)
                 if self.sync_manager.try_sync_model(iter_id):
