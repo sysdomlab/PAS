@@ -74,6 +74,8 @@ class Client():
             epoch_id += 1
             self.logging('start epoch: %d' % epoch_id)
             for step, (b_x, b_y) in enumerate(self.training_dataloader):
+                self.logging(b_x)
+                self.logging(b_y)
                 iter_id += 1
                 if CUDA:
                     b_x = b_x.cuda()
