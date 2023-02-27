@@ -38,8 +38,8 @@ dataset="KWS"
 # dataset="Cifar10"
 
 ### interlayer type
-# interlayer_type="Default"
-interlayer_type="CAS"
+interlayer_type="Default"
+# interlayer_type="CAS"
 
 ### sync setting
 batchsize=64
@@ -53,7 +53,8 @@ command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/server_process.py \
 echo "launch server:"
 echo $command
 echo
-nohup ssh $server $command >> $log_dir/client_process_0.log 2>&1 &
+# nohup ssh $server $command >> $log_dir/client_process_0.log 2>&1 &
+nohup ssh $server $command >> $log_dir/server_process.log 2>&1 &
 sleep 1
 
 ### --- launch sync process
@@ -93,7 +94,7 @@ else
             --batchsize=$batchsize --init_period=$init_period \
             --dirichlet_alpha=$dirichlet_alpha"
         echo $command
-        nohup ssh $i $command > $log_dir/client_process_$num.log 2>&1 &
+        nohup ssh $i $command >> $log_dir/client_process_$num.log 2>&1 &
         num=$((num+1))
     done
 fi

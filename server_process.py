@@ -263,6 +263,7 @@ class Default_AggregationService(Service):
             self.averaged_tensor = torch.zeros(self.flattened_params_length)
             print(self.averaged_tensor.device)
         self.lock.release()
+        self.logging(('rank %d, tensor ' % rank)+str(tensor_received))
 
         ''' averaging '''
         self.averaged_tensor += tensor_received/self.world_size
@@ -270,6 +271,7 @@ class Default_AggregationService(Service):
         self.lock.acquire()
         self.has_arrived[rank] = 1
         if sum(self.has_arrived) == self.world_size:
+            self.logging(self.averaged_tensor)
             ''' reset '''
             self.has_arrived = [0]*self.world_size
             self.first_has_arrived = 0
@@ -292,14 +294,17 @@ class Default_AggregationService(Service):
         self.lock.release()
         self.round_id = max(self.round_id, round_id)
         self.averaged_tensor += tensor_received/self.world_size
+        self.logging(('rank %d, tensor ' % rank)+str(tensor_received))
 
         self.lock.acquire()
         self.has_arrived[rank] = 1
         if sum(self.has_arrived) == self.world_size:
+            self.logging(self.averaged_tensor)
             ''' reset '''
             self.has_arrived = [0] * self.world_size
             self.first_has_arrived = 0
         self.lock.release()
+
 
         ''' otherwise, keep spining (blocked) '''
         while self.has_arrived[rank] == 1:

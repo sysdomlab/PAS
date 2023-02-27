@@ -22,6 +22,7 @@ def sync_thread(rank, round_id, tensor_to_transmit, mask, temp_period):
             if current_sync_period == 0: current_sync_period = period_queue.get()
             time.sleep(0.01)
         logging('start_sync: %d' % temp_period)
+        logging(tensor_to_transmit)
         t1 = time.time()
         tensor_to_restore = connection.root.aggregate(rank, round_id, tensor_to_transmit, temp_period)
         tensor_to_restore = rpyc.classic.obtain(tensor_to_restore)
