@@ -7,6 +7,7 @@ from rpyc.utils.server import ThreadedServer
 
 import threading, queue
 
+torch.set_printoptions(precision=20)
 CUDA = torch.cuda.is_available()
 
 flattened_tensor_to_restore = None
@@ -47,9 +48,11 @@ def sync_and_update_thread(rank, round_id, tensor_to_transmit, mask, temp_period
         temp_list = rpyc.classic.obtain(temp_list)
         t2 = time.time()
         logging('inner_sync_time: %.4f' % (t2-t1))
+        logging(temp_list)
         current_sync_period = 0
         global flattened_tensor_to_restore
         flattened_tensor_to_restore[mask] = temp_list[0]
+        logging(flattened_tensor_to_restore)
         global update_index
         update_index = temp_list[1]
         temp_len = len(tensor_to_transmit)
