@@ -222,6 +222,7 @@ class Sync_Manager():
         if CUDA: self.tensor_of_flattened_params = self.tensor_of_flattened_params.cpu()
         tensor_to_restore = self.connection.root.sync_initial_model(self.rank, self.tensor_of_flattened_params)
         tensor_to_restore = rpyc.classic.obtain(tensor_to_restore).cuda() if CUDA else rpyc.classic.obtain(tensor_to_restore)
+        self.logging(tensor_to_restore)
         self.transmit_interlayer.restore_model_from_tensor_received(tensor_to_restore)
 
     def try_sync_model(self, iter_id):
@@ -236,6 +237,7 @@ class Sync_Manager():
             t1 = time.time()
             tensor_received = self.connection.root.aggregate(self.rank, self.sync_round_id, flattened_tensor_to_transmit)
             tensor_received = rpyc.classic.obtain(tensor_received).cuda() if CUDA else rpyc.classic.obtain(tensor_received)
+            self.logging(tensor_received)
             t2 = time.time()
             self.logging('sync_time: %.4f' % (t2-t1))
             self.transmit_interlayer.restore_model_from_tensor_received(tensor_received)
