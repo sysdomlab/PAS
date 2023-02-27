@@ -11,7 +11,7 @@ from math import log2
 CUDA = torch.cuda.is_available()
 
 CAS_hyperparams_profile = {
-    'ema_theta' : 0.7,
+    'ema_theta' : 0.9,
     'observe_window_size' : 5
 }
 
@@ -20,43 +20,41 @@ class CAS_AggregationService(Service):
         super().__init__()
         self.flattened_params_length = None
         self.world_size = world_size
-        self.averaged_tensor = [0] * int(log2(init_period)+1)
+        self.averaged_tensor = None
         self.eam_theta = CAS_hyperparams_profile['ema_theta']
         self.lock = Lock()
         self.round_id = 0
         self.initial_period = init_period
         self.global_period = init_period
 
-        self.has_arrived = [([0] * self.world_size) for _ in range(int(log2(init_period)+1))]
-        self.first_has_arrived = [0] * int(log2(init_period)+1)
-
         self.param_sync_period = None
         self.last_tensor_received = None
-        self.positive_grad = [0] * int(log2(init_period)+1)
-        self.negative_grad = [0] * int(log2(init_period)+1)
+        self.positive_grad = None
+        self.negative_grad = None
         self.ema_positive_grad = None
         self.ema_negative_grad = None
-        self.mask = [0] * int(log2(init_period)+1)
+        self.mask = None
         self.grad_consistency = None
         self.min_grad_consistency = None
         self.window_start_round = None
         self.global_tune_index = None
         self.observe_window_size = None
         
+        self.first_has_arrived = 0
+        self.has_arrived = [0] * world_size
+
     def logging(self, string):
         print('['+str(datetime.datetime.now())+'] [Server] '+str(string))
         sys.stdout.flush()
 
     def exposed_sync_initial_model(self, rank, init_period, tensor_received):
-        self.logging('receive rank %d, round_id 0' % rank)
+        # self.logging('receive rank %d, round_id 0' % rank)
         tensor_received = rpyc.classic.obtain(tensor_received)
         self.lock.acquire()
-        if self.first_has_arrived[0] == 0:
-            self.first_has_arrived[0] = 1
-            self.initial_period = init_period
-            self.global_period = init_period
+        if self.first_has_arrived == 0:
+            self.first_has_arrived = 1
             self.flattened_params_length = len(tensor_received)
-            self.averaged_tensor[0] = torch.zeros(self.flattened_params_length)
+            self.averaged_tensor = torch.zeros(self.flattened_params_length)
 
             self.grad_consistency = torch.full([self.flattened_params_length], 1, dtype=torch.float32)
             self.min_grad_consistency = torch.full([self.flattened_params_length], 1, dtype=torch.float32)
@@ -68,72 +66,75 @@ class CAS_AggregationService(Service):
         self.lock.release()
 
         ''' averaging '''
-        self.averaged_tensor[0] += tensor_received/self.world_size
+        self.averaged_tensor += tensor_received/self.world_size
 
         self.lock.acquire()
-        self.has_arrived[0][rank] = 1
-        if sum(self.has_arrived[0]) == self.world_size:
-            self.last_tensor_received = copy.deepcopy(self.averaged_tensor[0])
+        self.has_arrived[rank] = 1
+        if sum(self.has_arrived) == self.world_size:
+            self.last_tensor_received = copy.deepcopy(self.averaged_tensor)
             ''' reset '''
-            self.has_arrived[0] = [0]*self.world_size
-            self.first_has_arrived[0] = 0
+            self.has_arrived = [0]*self.world_size
+            self.first_has_arrived = 0
             
         self.lock.release()
 
-        while self.has_arrived[0][rank] == 1:
+        while self.has_arrived[rank] == 1:
             time.sleep(0.01)
 
-        self.logging('return rank %d, round_id 0' % rank)
-        return self.averaged_tensor[0]
+        # self.logging('return rank %d, round_id 0' % rank)
+        return self.averaged_tensor
 
     def exposed_aggregate(self, rank, round_id, tensor_received, temp_period):
-        self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         tensor_received = rpyc.classic.obtain(tensor_received)
         received_length = len(tensor_received)
-        temp_index = int(log2(temp_period))
         self.lock.acquire()
-        if self.first_has_arrived[temp_index] == 0:
-            self.mask[temp_index] = (self.param_sync_period == temp_period)
-            self.averaged_tensor[temp_index] = torch.zeros(received_length)
-            self.positive_grad[temp_index] = torch.zeros(received_length)
-            self.negative_grad[temp_index] = torch.zeros(received_length)
-            self.first_has_arrived[temp_index] = 1
+        if self.first_has_arrived == 0:
+            self.mask = (self.param_sync_period == temp_period)
+            self.averaged_tensor = torch.zeros(received_length)
+            self.positive_grad = torch.zeros(received_length)
+            self.negative_grad = torch.zeros(received_length)
+            self.first_has_arrived = 1
             self.round_id = round_id
         self.lock.release()
 
         ''' averaging '''
-        self.averaged_tensor[temp_index] += tensor_received/self.world_size
+        self.averaged_tensor += tensor_received/self.world_size
+
         ''' pooling '''
-        grad_tensor = tensor_received - self.last_tensor_received[self.mask[temp_index]]
-        self.positive_grad[temp_index] += torch.where(grad_tensor > 0, grad_tensor, 0)
-        self.negative_grad[temp_index] -= torch.where(grad_tensor <= 0, grad_tensor, 0)
+        grad_tensor = tensor_received - self.last_tensor_received[self.mask]
+        self.positive_grad += torch.where(grad_tensor > 0, grad_tensor, 0)
+        self.negative_grad -= torch.where(grad_tensor <= 0, grad_tensor, 0)
+
         self.lock.acquire()
-        self.has_arrived[temp_index][rank] = 1
-        if sum(self.has_arrived[temp_index]) == self.world_size:
+        self.has_arrived[rank] = 1
+        if sum(self.has_arrived) == self.world_size:
             self.lock.release()
             ''' smoothing '''
-            self.ema_positive_grad[self.mask[temp_index]] = self.eam_theta*self.ema_positive_grad[self.mask[temp_index]] + (1-self.eam_theta)*self.positive_grad[temp_index]
-            self.ema_negative_grad[self.mask[temp_index]] = self.eam_theta*self.ema_negative_grad[self.mask[temp_index]] + (1-self.eam_theta)*self.negative_grad[temp_index]
+            self.ema_positive_grad[self.mask] = self.eam_theta*self.ema_positive_grad[self.mask] + (1-self.eam_theta)*self.positive_grad
+            self.ema_negative_grad[self.mask] = self.eam_theta*self.ema_negative_grad[self.mask] + (1-self.eam_theta)*self.negative_grad
         
-            self.last_tensor_received[self.mask[temp_index]] = self.averaged_tensor[temp_index]
+            self.last_tensor_received[self.mask] = self.averaged_tensor
 
             ''' reset '''
-            self.has_arrived[temp_index] = [0] * self.world_size
-            self.first_has_arrived[temp_index] = 0
+            self.has_arrived = [0] * self.world_size
+            self.first_has_arrived = 0
 
         else:
             self.lock.release()
-        while self.has_arrived[temp_index][rank] == 1:
+        
+        while self.has_arrived[rank] == 1:
             time.sleep(0.01)
-        self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
-        return self.averaged_tensor[temp_index]
+        
+        # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        return self.averaged_tensor
     
     def exposed_update_period(self, rank):
         ''' calculate grad consistency '''
         self.lock.acquire()
-        self.has_arrived[0][rank] = 1
-        if self.first_has_arrived[0] == 0:
-            self.first_has_arrived[0] = 1
+        self.has_arrived[rank] = 1
+        if self.first_has_arrived == 0:
+            self.first_has_arrived = 1
             self.lock.release()
             self.grad_consistency = abs(self.ema_positive_grad-self.ema_negative_grad) / (self.ema_positive_grad+self.ema_negative_grad)
             self.tune_mask = ((self.grad_consistency > self.min_grad_consistency) \
@@ -154,18 +155,18 @@ class CAS_AggregationService(Service):
             index = self.tune_mask.nonzero()
             self.global_tune_index = torch.cat((index, self.tune_global_period()), 0)   
 
-            while sum(self.has_arrived[0]) != self.world_size:
+            while sum(self.has_arrived) != self.world_size:
                 time.sleep(0.01)
 
             ''' reset '''
-            self.has_arrived[0] = [0]*self.world_size
-            self.first_has_arrived[0] = 0
+            self.has_arrived = [0]*self.world_size
+            self.first_has_arrived = 0
 
         else:
-            self.has_arrived[0][rank] = 1
+            self.has_arrived[rank] = 1
             self.lock.release()
 
-        while self.has_arrived[0][rank] == 1:
+        while self.has_arrived[rank] == 1:
             time.sleep(0.01)
 
         return self.global_tune_index
@@ -197,7 +198,6 @@ class CAS_AggregationService(Service):
         self.logging("param_averaging_grad_consistency: "+str(grad_consistency_list))
         average_consistency = self.grad_consistency.sum() / self.flattened_params_length  
         self.logging("round_id: %d; average_consistency: %.4f" % (self.round_id, average_consistency))
-        print()
 
         if tune == 1:
             mask = (self.param_sync_period == self.global_period)
@@ -211,7 +211,6 @@ class CAS_AggregationService(Service):
             # self.window_start_round[mask] = self.round_id
         
         return tune
-        
 
 class Default_AggregationService(Service):
     def __init__(self, world_size):
@@ -229,7 +228,7 @@ class Default_AggregationService(Service):
         sys.stdout.flush()
 
     def exposed_sync_initial_model(self, rank, tensor_received):
-        # self.logging('receive rank %d, sync_initial_model' % (rank))
+        self.logging('receive rank %d, sync_initial_model' % (rank))
         tensor_received = rpyc.classic.obtain(tensor_received)
         print(tensor_received.device)
         self.lock.acquire()

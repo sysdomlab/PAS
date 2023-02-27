@@ -9,7 +9,7 @@ except ImportError:
 CUDA = torch.cuda.is_available()
 
 ParamGIFTProfile = {
-    'ema_theta': 0.9,
+    'ema_theta': 0.8,
     'observe_window_size': 5,
 }
 
@@ -101,7 +101,11 @@ class CAS_Interlayer():
         self.freezing_mask += self.mask
 
         t1 = time.time()
-        self.connection.root.sync(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
+        if iter_id % self.init_period == 0:
+            self.connection.root.sync_and_update(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
+            if CUDA else self.connection.root.sync(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
+        else:
+            self.connection.root.sync_and_update(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
             if CUDA else self.connection.root.sync(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
         # self.sync_fun(transmit_list, round_iter)
         t2 = time.time()
@@ -113,7 +117,6 @@ class CAS_Interlayer():
         else:
             return 0
         
-
         
     def update_period(self):
         index = self.connection.root.update_period()

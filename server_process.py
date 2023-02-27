@@ -11,7 +11,7 @@ from math import log2
 CUDA = torch.cuda.is_available()
 
 CAS_hyperparams_profile = {
-    'ema_theta' : 0.7,
+    'ema_theta' : 0.9,
     'observe_window_size' : 5
 }
 
@@ -128,8 +128,53 @@ class CAS_AggregationService(Service):
         
         # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         return self.averaged_tensor
+
+    def exposed_aggregate_and_update(self, rank, round_id, tensor_received, temp_period):
+        # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        tensor_received = rpyc.classic.obtain(tensor_received)
+        received_length = len(tensor_received)
+        self.lock.acquire()
+        if self.first_has_arrived == 0:
+            self.mask = (self.param_sync_period == temp_period)
+            self.averaged_tensor = torch.zeros(received_length)
+            self.positive_grad = torch.zeros(received_length)
+            self.negative_grad = torch.zeros(received_length)
+            self.first_has_arrived = 1
+            self.round_id = round_id
+        self.lock.release()
+
+        ''' averaging '''
+        self.averaged_tensor += tensor_received/self.world_size
+
+        ''' pooling '''
+        grad_tensor = tensor_received - self.last_tensor_received[self.mask]
+        self.positive_grad += torch.where(grad_tensor > 0, grad_tensor, 0)
+        self.negative_grad -= torch.where(grad_tensor <= 0, grad_tensor, 0)
+
+        self.lock.acquire()
+        self.has_arrived[rank] = 1
+        if sum(self.has_arrived) == self.world_size:
+            self.lock.release()
+            ''' smoothing '''
+            self.ema_positive_grad[self.mask] = self.eam_theta*self.ema_positive_grad[self.mask] + (1-self.eam_theta)*self.positive_grad
+            self.ema_negative_grad[self.mask] = self.eam_theta*self.ema_negative_grad[self.mask] + (1-self.eam_theta)*self.negative_grad
+        
+            self.last_tensor_received[self.mask] = self.averaged_tensor
+
+            ''' reset '''
+            self.has_arrived = [0] * self.world_size
+            self.first_has_arrived = 0
+
+        else:
+            self.lock.release()
+        
+        while self.has_arrived[rank] == 1:
+            time.sleep(0.01)
+        
+        # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        return [self.averaged_tensor, self.update_period(rank)]
     
-    def exposed_update_period(self, rank):
+    def update_period(self, rank):
         ''' calculate grad consistency '''
         self.lock.acquire()
         self.has_arrived[rank] = 1
@@ -198,7 +243,6 @@ class CAS_AggregationService(Service):
         self.logging("param_averaging_grad_consistency: "+str(grad_consistency_list))
         average_consistency = self.grad_consistency.sum() / self.flattened_params_length  
         self.logging("round_id: %d; average_consistency: %.4f" % (self.round_id, average_consistency))
-        print()
 
         if tune == 1:
             mask = (self.param_sync_period == self.global_period)
