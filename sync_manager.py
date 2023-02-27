@@ -225,7 +225,7 @@ class Sync_Manager():
 
     def try_sync_model(self, iter_id):
         """ Conduct remote synchronization. """
-        # t1 = time.time()
+        t1 = time.time()
         flattened_tensor_to_transmit = self.transmit_interlayer.generate_flattened_tensor_to_transmit(iter_id)
         if len(flattened_tensor_to_transmit) != 0:
             t2 = time.time()
