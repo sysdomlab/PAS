@@ -10,7 +10,7 @@ from dataset_manager import Dataset_Manager
 from sync_manager import Sync_Manager
 from client_rpyc import CAS_Manager
 
-
+torch.set_printoptions(precision=20)
 CUDA = torch.cuda.is_available()
 print("CUDA: ",CUDA)
 
@@ -82,7 +82,12 @@ class Client():
                     b_y = b_y.cuda()
                 self.optimizer.zero_grad()
                 # t1 = time.time()
-                self.loss_func(self.model(b_x), b_y).backward()
+                out_put = self.model(b_x)
+                self.logging(out_put)
+                loss = self.loss_func(out_put,b_y)
+                self.logging(loss)
+                loss.backward()
+                # self.loss_func(self.model(b_x), b_y).backward()
                 self.optimizer.step()
                 tensor_of_flattened_params = torch.tensor([]).cuda() if CUDA else torch.tensor([])
                 for p in self.model.parameters():

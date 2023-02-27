@@ -146,6 +146,7 @@ class CAS_Interlayer():
 
     def restore_model_from_tensor_received(self):
         """"""
+        self.logging(self.received_tensor)
         for i, param in enumerate(self.model.parameters()):
             param.data = self.received_tensor[self.cutoff_index_list[i][0]:self.cutoff_index_list[i][1]].view(self.param_shape_list[i])
 
