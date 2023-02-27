@@ -51,7 +51,6 @@ def sync_and_update_thread(rank, round_id, tensor_to_transmit, mask, temp_period
         flattened_tensor_to_restore[mask] = temp_list[0]
         global update_index
         update_index = temp_list[1]
-        logging(update_index)
         temp_len = len(tensor_to_transmit)
         global round_transmit_param_volume
         round_transmit_param_volume += temp_len
@@ -136,7 +135,6 @@ class Sync_Service(Service):
 
     def exposed_update_period(self):
         global update_index
-        logging(update_index)
         return update_index
         
 

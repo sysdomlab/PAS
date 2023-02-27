@@ -160,7 +160,7 @@ class CAS_AggregationService(Service):
             self.ema_negative_grad[self.mask] = self.eam_theta*self.ema_negative_grad[self.mask] + (1-self.eam_theta)*self.negative_grad
         
             self.last_tensor_received[self.mask] = self.averaged_tensor
-
+            self.update_period()
             ''' reset '''
             self.has_arrived = [0] * self.world_size
             self.first_has_arrived = 0
@@ -170,51 +170,31 @@ class CAS_AggregationService(Service):
         
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
-        
         # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
-        return [self.averaged_tensor, self.update_period(rank)]
+        return [self.averaged_tensor, self.global_tune_index]
     
-    def update_period(self, rank):
+    def update_period(self):
         ''' calculate grad consistency '''
-        self.lock.acquire()
-        self.has_arrived[rank] = 1
-        if self.first_has_arrived == 0:
-            self.first_has_arrived = 1
-            self.lock.release()
-            self.grad_consistency = abs(self.ema_positive_grad-self.ema_negative_grad) / (self.ema_positive_grad+self.ema_negative_grad)
-            self.tune_mask = ((self.grad_consistency > self.min_grad_consistency) \
-                                & (self.grad_consistency < 0.1) & (self.param_sync_period > 1) \
-                                & (self.round_id > self.window_start_round + self.observe_window_size))
-            self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency)
 
-            self.param_sync_period[self.tune_mask] //= 2
-            self.min_grad_consistency[self.tune_mask] = 1
-            self.observe_window_size[self.tune_mask] *= 2
-            self.ema_positive_grad[self.tune_mask] = 0
-            self.ema_negative_grad[self.tune_mask] = 0
-            self.window_start_round[self.tune_mask] = self.round_id
+        self.grad_consistency = abs(self.ema_positive_grad-self.ema_negative_grad) / (self.ema_positive_grad+self.ema_negative_grad)
+        self.tune_mask = ((self.grad_consistency > self.min_grad_consistency) \
+                            & (self.grad_consistency < 0.1) & (self.param_sync_period > 1) \
+                            & (self.round_id > self.window_start_round + self.observe_window_size))
+        self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency)
 
-            self.window_start_round[self.temp_mask2] = self.round_id
-            self.min_grad_consistency[self.temp_mask2] = self.grad_consistency[self.temp_mask2]
+        self.param_sync_period[self.tune_mask] //= 2
+        self.min_grad_consistency[self.tune_mask] = 1
+        self.observe_window_size[self.tune_mask] *= 2
+        self.ema_positive_grad[self.tune_mask] = 0
+        self.ema_negative_grad[self.tune_mask] = 0
+        self.window_start_round[self.tune_mask] = self.round_id
 
-            index = self.tune_mask.nonzero()
-            self.global_tune_index = torch.cat((index, self.tune_global_period()), 0)   
+        self.window_start_round[self.temp_mask2] = self.round_id
+        self.min_grad_consistency[self.temp_mask2] = self.grad_consistency[self.temp_mask2]
 
-            while sum(self.has_arrived) != self.world_size:
-                time.sleep(0.01)
+        index = self.tune_mask.nonzero()
+        self.global_tune_index = torch.cat((index, self.tune_global_period()), 0)   
 
-            ''' reset '''
-            self.has_arrived = [0]*self.world_size
-            self.first_has_arrived = 0
-
-        else:
-            self.has_arrived[rank] = 1
-            self.lock.release()
-
-        while self.has_arrived[rank] == 1:
-            time.sleep(0.01)
-
-        return self.global_tune_index
     
     def tune_global_period(self):
         temp_period = self.initial_period
