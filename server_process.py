@@ -84,7 +84,7 @@ class CAS_AggregationService(Service):
             self.has_arrived = [0]*self.world_size
             self.tensor_collected_list = [0]*self.world_size
             self.first_has_arrived = 0
-            
+            self.logging('finishing round 0')
         self.lock.release()
 
         while self.has_arrived[rank] == 1:
@@ -94,7 +94,7 @@ class CAS_AggregationService(Service):
         return self.averaged_tensor
 
     def exposed_aggregate(self, rank, round_id, tensor_received, temp_period):
-        self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
         self.lock.acquire()
         if self.first_has_arrived == 0:
@@ -117,18 +117,18 @@ class CAS_AggregationService(Service):
             self.has_arrived = [0] * self.world_size
             self.tensor_collected_list = [0] * self.world_size
             self.first_has_arrived = 0
-
+            self.logging('finishing round %d' % round_id)
         else:
             self.lock.release()
         
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
         
-        self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         return self.averaged_tensor
 
     def exposed_aggregate_and_update(self, rank, round_id, tensor_received, temp_period):
-        self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
         self.lock.acquire()
         if self.first_has_arrived == 0:
@@ -150,25 +150,25 @@ class CAS_AggregationService(Service):
             self.last_tensor_received[self.mask] = self.averaged_tensor
             self.update_period()
 
-            # ''' testing '''
-            # t1 = time.time()
-            # test_tensor = copy.deepcopy(self.last_tensor_received)
-            # testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
-            # testing_thread.start()
-            # t2 = time.time()
-            # self.logging("start_testing_thread: %.4f" % (t2-t1))
+            ''' testing '''
+            t1 = time.time()
+            test_tensor = copy.deepcopy(self.last_tensor_received)
+            testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
+            testing_thread.start()
+            t2 = time.time()
+            self.logging("start_testing_thread: %.4f" % (t2-t1))
 
             ''' reset '''
             self.has_arrived = [0] * self.world_size
             self.tensor_collected_list = [0] *self.world_size
             self.first_has_arrived = 0
-
+            self.logging('finishing round %d' % round_id)
         else:
             self.lock.release()
         
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
-        self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         return [self.averaged_tensor, self.global_tune_index]
         
 
@@ -280,7 +280,7 @@ class Default_AggregationService(Service):
             self.has_arrived = [0]*self.world_size
             self.tensor_collected_list = [0]*self.world_size
             self.first_has_arrived = 0
-            
+            self.logging('finishing round 0')
         self.lock.release()
 
         while self.has_arrived[rank] == 1:
@@ -299,25 +299,26 @@ class Default_AggregationService(Service):
         if sum(self.has_arrived) == self.world_size:
             self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
 
-            # ''' testing '''
-            # t1 = time.time()
-            # test_tensor = copy.deepcopy(self.averaged_tensor)
-            # testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
-            # testing_thread.start()
-            # t2 = time.time()
-            # self.logging("start_testing_thread: %.4f" % (t2-t1))
+            ''' testing '''
+            t1 = time.time()
+            test_tensor = copy.deepcopy(self.averaged_tensor)
+            testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
+            testing_thread.start()
+            t2 = time.time()
+            self.logging("start_testing_thread: %.4f" % (t2-t1))
 
             ''' reset '''
             self.has_arrived = [0] * self.world_size
             self.tensor_collected_list = [0] * self.world_size
             self.first_has_arrived = 0
+
+            self.logging('finishing round %d' % round_id)
         self.lock.release()
 
 
         ''' otherwise, keep spining (blocked) '''
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
-
         # self.logging('return rank %d, round_id %d' % (rank, round_id))
         return self.averaged_tensor
 

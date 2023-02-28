@@ -89,12 +89,12 @@ class Client():
                     t3 = time.time()
                     self.logging('try_sync_time: %.4f' % (t3-t2))
                     round_id += 1
-                    if iter_id % max(self.init_period, 64) == 0 and self.rank == 1:
-                        t1 = time.time()
-                        accuracy = self.test()
-                        t2 = time.time()
-                        self.logging('test_time: %.4f' % (t2-t1))
-                        self.logging(' - test - iter_id: %d; epoch_id: %d, round_id: %d; accuracy: %.4f;' % (iter_id, epoch_id, self.sync_manager.sync_round_id, accuracy))
+                    # if iter_id % max(self.init_period, 64) == 0 and self.rank == 1:
+                    #     t1 = time.time()
+                    #     accuracy = self.test()
+                    #     t2 = time.time()
+                    #     self.logging('test_time: %.4f' % (t2-t1))
+                    #     self.logging(' - test - iter_id: %d; epoch_id: %d, round_id: %d; accuracy: %.4f;' % (iter_id, epoch_id, self.sync_manager.sync_round_id, accuracy))
                         # self.model_manager.save_model(self.sync_manager.sync_round_id)
             self.logging('finish epoch: %d\n' % epoch_id)
 
