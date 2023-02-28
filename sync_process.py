@@ -17,11 +17,11 @@ current_sync_period = 0
 update_index = None
 
 def sync_thread(rank, round_id, tensor_to_transmit, mask, temp_period):
-        global current_sync_period
-        global period_queue
+        global current_sync_period, period_queue
         while current_sync_period != temp_period:
-            if current_sync_period == 0: current_sync_period = period_queue.get()
-            if current_sync_period != temp_period: time.sleep(0.01)
+            if current_sync_period == 0: 
+                 current_sync_period = period_queue.get()
+            time.sleep(0.01)
 
         logging('start_sync: %d' % temp_period)
         t1 = time.time()
@@ -37,10 +37,10 @@ def sync_thread(rank, round_id, tensor_to_transmit, mask, temp_period):
         round_transmit_param_volume += temp_len
 
 def sync_and_update_thread(rank, round_id, tensor_to_transmit, mask, temp_period):
-        global current_sync_period
-        global period_queue
+        global current_sync_period, period_queue
         while current_sync_period != temp_period:
-            if current_sync_period == 0: current_sync_period = period_queue.get()
+            if current_sync_period == 0: 
+                current_sync_period = period_queue.get()
             time.sleep(0.01)
         logging('start_sync: %d' % temp_period)
         t1 = time.time()
@@ -95,7 +95,7 @@ class Sync_Service(Service):
     def exposed_sync(self, tensor_to_transmit, mask, temp_period):
         global period_queue
         period_queue.put(temp_period)
-        self.logging('sync_start: %d' % temp_period)
+        # self.logging('sync_start: %d' % temp_period)
         ''' aggregate '''
         tensor_to_transmit = rpyc.classic.obtain(tensor_to_transmit)
         mask = rpyc.classic.obtain(mask)
@@ -111,7 +111,7 @@ class Sync_Service(Service):
     def exposed_sync_and_update(self, tensor_to_transmit, mask, temp_period):
         global period_queue
         period_queue.put(temp_period)
-        self.logging('sync_start: %d' % temp_period)
+        # self.logging('sync_start: %d' % temp_period)
         ''' aggregate '''
         tensor_to_transmit = rpyc.classic.obtain(tensor_to_transmit)
         mask = rpyc.classic.obtain(mask)
