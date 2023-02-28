@@ -85,10 +85,10 @@ class CAS_AggregationService(Service):
     def exposed_aggregate(self, rank, round_id, tensor_received, temp_period):
         # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
-        received_length = len(tensor_received)
         self.lock.acquire()
         if self.first_has_arrived == 0:
             self.mask = (self.param_sync_period == temp_period)
+            received_length = len(self.tensor_collected_list[rank])
             self.positive_grad = torch.zeros(received_length)
             self.negative_grad = torch.zeros(received_length)
             self.first_has_arrived = 1
@@ -118,15 +118,16 @@ class CAS_AggregationService(Service):
 
     def exposed_aggregate_and_update(self, rank, round_id, tensor_received, temp_period):
         # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
-        tensor_received = rpyc.classic.obtain(tensor_received)
-        received_length = len(tensor_received)
+        self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
         self.lock.acquire()
         if self.first_has_arrived == 0:
             self.mask = (self.param_sync_period == temp_period)
+            received_length = len(self.tensor_collected_list[rank])
             self.positive_grad = torch.zeros(received_length)
             self.negative_grad = torch.zeros(received_length)
             self.first_has_arrived = 1
             self.round_id = round_id
+
 
         self.has_arrived[rank] = 1
         if sum(self.has_arrived) == self.world_size:
@@ -138,6 +139,7 @@ class CAS_AggregationService(Service):
             self.update_period()
             ''' reset '''
             self.has_arrived = [0] * self.world_size
+            self.tensor_collected_list = [0] *self.world_size
             self.first_has_arrived = 0
 
         else:
@@ -150,8 +152,8 @@ class CAS_AggregationService(Service):
         
 
     def pooling_and_smoothing(self):
+        ''' pooling '''
         for i in range(self.world_size):
-            ''' pooling '''
             grad_tensor = self.tensor_collected_list[i] - self.last_tensor_received[self.mask]
             self.positive_grad += torch.where(grad_tensor > 0, grad_tensor, 0)
             self.negative_grad -= torch.where(grad_tensor <= 0, grad_tensor, 0)

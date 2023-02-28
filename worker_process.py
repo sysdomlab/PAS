@@ -79,11 +79,11 @@ class Client():
                     b_x = b_x.cuda()
                     b_y = b_y.cuda()
                 self.optimizer.zero_grad()
-                # t1 = time.time()
+                t1 = time.time()
                 self.loss_func(self.model(b_x), b_y).backward()
                 self.optimizer.step()
                 t2 = time.time()
-                # self.logging('training_time: %.4f' % (t2-t1))
+                self.logging('training_time: %.4f' % (t2-t1))
                 # self.logging('finish local iteration: %d' % iter_id)
                 if self.sync_manager.try_sync_model(iter_id):
                     t3 = time.time()
