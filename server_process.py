@@ -5,16 +5,23 @@ import rpyc
 from rpyc import Service
 from rpyc.utils.server import ThreadedServer
 
-from threading import Lock
+from threading import Lock,Thread
 from math import log2
+
+from model_manager import Model_Manager
+from dataset_manager import Dataset_Manager
 
 torch.set_printoptions(precision=20)
 CUDA = torch.cuda.is_available()
 
 CAS_hyperparams_profile = {
-    'ema_theta' : 0.7,
+    'ema_theta' : 0.9,
     'observe_window_size' : 5
 }
+
+model = None
+testing_dataloader = None
+cutoff_index_list, param_shape_list = [], []
 
 class CAS_AggregationService(Service):
     def __init__(self, world_size, init_period) -> None:
@@ -44,6 +51,8 @@ class CAS_AggregationService(Service):
         self.first_has_arrived = 0
         self.has_arrived = [0] * world_size
         self.tensor_collected_list = [0] * world_size
+        print('- CAS Hyperparams Profile: ')
+        pprint.pprint(CAS_hyperparams_profile)
 
     def logging(self, string):
         print('['+str(datetime.datetime.now())+'] [Server] '+str(string))
@@ -135,8 +144,17 @@ class CAS_AggregationService(Service):
             self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
             self.pooling_and_smoothing()
 
+            
             self.last_tensor_received[self.mask] = self.averaged_tensor
             self.update_period()
+
+            ''' testing '''
+            t1 = time.time()
+            testing_thread = Thread(target=test_thread, args=(round_id, self.averaged_tensor,))
+            testing_thread.start()
+            t2 = time.time()
+            self.logging("start_testing_thread: %.4f" % (t2-t1))
+
             ''' reset '''
             self.has_arrived = [0] * self.world_size
             self.tensor_collected_list = [0] *self.world_size
@@ -277,8 +295,17 @@ class Default_AggregationService(Service):
         self.has_arrived[rank] = 1
         if sum(self.has_arrived) == self.world_size:
             self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
+
+            ''' testing '''
+            t1 = time.time()
+            testing_thread = Thread(target=test_thread, args=(round_id, self.averaged_tensor,))
+            testing_thread.start()
+            t2 = time.time()
+            self.logging("start_testing_thread: %.4f" % (t2-t1))
+
             ''' reset '''
             self.has_arrived = [0] * self.world_size
+            self.tensor_collected_list = [0] * self.world_size
             self.first_has_arrived = 0
         self.lock.release()
 
@@ -289,6 +316,41 @@ class Default_AggregationService(Service):
 
         # self.logging('return rank %d, round_id %d' % (rank, round_id))
         return self.averaged_tensor
+
+
+def test_thread(tensor_to_restore,round_id):
+        global model, testing_dataloader, cutoff_index_list, param_shape_list
+        accuracy = 0
+        positive_test_number = 0.0
+        total_test_number = 0.0
+        # loss = 0.0
+        ''' restore param '''
+        for i, param in enumerate(model.parameters()):
+            param.data = tensor_to_restore[cutoff_index_list[i][0]:cutoff_index_list[i][1]].view(param_shape_list[i])
+
+        t1 = time.time()
+        with torch.no_grad():
+            for step, (test_x, test_y) in enumerate(testing_dataloader):
+                if CUDA:
+                    test_x = test_x.cuda()
+                    test_y = test_y.cuda()
+                test_output = model(test_x)
+                # loss += self.loss_func(test_output, test_y)
+                # pred_y = torch.max(test_output, 1)[1].data.cpu().numpy()
+                # positive_test_number += (pred_y == test_y.data.cpu().numpy()).astype(int).sum()
+                pred_y = torch.max(test_output, 1)[1].data.cpu().numpy()
+                positive_test_number += (pred_y == test_y.data.cpu().numpy()).astype(int).sum()
+                total_test_number += len(test_y)
+        # loss /= step
+        # print("loss: %.4f" % loss)
+        accuracy = positive_test_number / total_test_number
+        t2 = time.time()
+        logging('test_time: %.4f' % (t2-t1))
+        logging(' - test - round_id: %d; accuracy: %.4f;' % (round_id, accuracy))
+        
+def logging(string):
+    print('['+str(datetime.datetime.now())+'] [Server] '+str(string))
+    sys.stdout.flush()
 
 
 if __name__ == "__main__":
@@ -305,6 +367,43 @@ if __name__ == "__main__":
     args = parser.parse_args()
     print('Trial ID: ' + str(args.trial_no) + '; Exp Setup Remarks: ' + args.remarks + '\n')
     sys.stdout.flush()
+
+    """ Local Training Profile """
+    model_name, dataset_name = args.model, args.dataset
+    local_profile = {
+        'model_profile' : {
+            'model_name' : model_name
+        },
+        'dataset_profile' : {
+            'dataset_name' : dataset_name,
+            'is_iid' : False,
+            'world_size' : 20,
+            'partition_rank' : 0,
+            'batch_size' : 64,
+            'dirichlet_alpha' : 1
+        }
+    }
+    
+    ''' Model Initialization'''
+    model_manager = Model_Manager(local_profile['model_profile'])
+    model = model_manager.load_model()
+    # optimizer = model_manager.get_optimizer()
+    # loss_func = model_manager.get_loss_func()
+
+    ''' Initialization Index List '''
+    s_index = 0
+    for param in model.parameters():
+        param_shape_list.append(param.data.shape)
+        flatten_params = param.data.view(-1)
+        e_index = s_index + len(flatten_params)
+        cutoff_index_list.append([s_index, e_index])
+        s_index = e_index
+
+
+    ''' Dataset Initialization '''
+    dataset_manager = Dataset_Manager(local_profile['dataset_profile'])
+    testing_dataloader = dataset_manager.get_testing_dataloader()
+
 
     if args.interlayer_type == 'CAS':
         service = CAS_AggregationService(args.world_size, args.init_period)
