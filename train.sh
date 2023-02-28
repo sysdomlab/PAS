@@ -68,6 +68,7 @@ if [ "$interlayer_type" = "CAS" ]; then
         nohup ssh $i $command >> $log_dir/client_process_$num.log 2>&1 &
         num=$((num+1))
     done
+    sleep 1
     ### --- launch client process
     num=0
     for i in $clients; do
