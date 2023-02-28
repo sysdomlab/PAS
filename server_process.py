@@ -19,6 +19,7 @@ CAS_hyperparams_profile = {
     'observe_window_size' : 5
 }
 
+test_lock = Lock()
 model = None
 testing_dataloader = None
 cutoff_index_list, param_shape_list = [], []
@@ -53,6 +54,7 @@ class CAS_AggregationService(Service):
         self.tensor_collected_list = [0] * world_size
         print('- CAS Hyperparams Profile: ')
         pprint.pprint(CAS_hyperparams_profile)
+        sys.stdout.flush()
 
     def logging(self, string):
         print('['+str(datetime.datetime.now())+'] [Server] '+str(string))
@@ -148,12 +150,13 @@ class CAS_AggregationService(Service):
             self.last_tensor_received[self.mask] = self.averaged_tensor
             self.update_period()
 
-            ''' testing '''
-            t1 = time.time()
-            testing_thread = Thread(target=test_thread, args=(round_id, self.averaged_tensor,))
-            testing_thread.start()
-            t2 = time.time()
-            self.logging("start_testing_thread: %.4f" % (t2-t1))
+            # ''' testing '''
+            # t1 = time.time()
+            # test_tensor = copy.deepcopy(self.last_tensor_received)
+            # testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
+            # testing_thread.start()
+            # t2 = time.time()
+            # self.logging("start_testing_thread: %.4f" % (t2-t1))
 
             ''' reset '''
             self.has_arrived = [0] * self.world_size
@@ -296,12 +299,13 @@ class Default_AggregationService(Service):
         if sum(self.has_arrived) == self.world_size:
             self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
 
-            ''' testing '''
-            t1 = time.time()
-            testing_thread = Thread(target=test_thread, args=(round_id, self.averaged_tensor,))
-            testing_thread.start()
-            t2 = time.time()
-            self.logging("start_testing_thread: %.4f" % (t2-t1))
+            # ''' testing '''
+            # t1 = time.time()
+            # test_tensor = copy.deepcopy(self.averaged_tensor)
+            # testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
+            # testing_thread.start()
+            # t2 = time.time()
+            # self.logging("start_testing_thread: %.4f" % (t2-t1))
 
             ''' reset '''
             self.has_arrived = [0] * self.world_size
@@ -318,8 +322,10 @@ class Default_AggregationService(Service):
         return self.averaged_tensor
 
 
-def test_thread(tensor_to_restore,round_id):
-        global model, testing_dataloader, cutoff_index_list, param_shape_list
+def test_thread(round_id, tensor_to_restore):
+        global model, testing_dataloader, cutoff_index_list, param_shape_list, test_lock
+
+        test_lock.acquire()
         accuracy = 0
         positive_test_number = 0.0
         total_test_number = 0.0
@@ -347,6 +353,7 @@ def test_thread(tensor_to_restore,round_id):
         t2 = time.time()
         logging('test_time: %.4f' % (t2-t1))
         logging(' - test - round_id: %d; accuracy: %.4f;' % (round_id, accuracy))
+        test_lock.release()
         
 def logging(string):
     print('['+str(datetime.datetime.now())+'] [Server] '+str(string))
@@ -363,6 +370,8 @@ if __name__ == "__main__":
     parser.add_argument('--remarks', type=str, default='Remarks Missing...')
     parser.add_argument('--interlayer_type', type=str, default='Defualt')
     parser.add_argument('--init_period', type=int, default=128)
+    parser.add_argument('--model', type=str, default=None)
+    parser.add_argument('--dataset', type=str, default=None)
 
     args = parser.parse_args()
     print('Trial ID: ' + str(args.trial_no) + '; Exp Setup Remarks: ' + args.remarks + '\n')

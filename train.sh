@@ -29,17 +29,17 @@ rm -rf Latest_Log && ln -s $log_dir Latest_Log
 echo 'logs in '$log_dir
 
 ### model
-model="ResNet18_Cifar10"
-# model="LSTM_KWS"
+# model="ResNet18_Cifar10"
+model="LSTM_KWS"
 # model="CNN_Cifar10"
 
 ### dateset
-# dataset="KWS"
-dataset="Cifar10"
+dataset="KWS"
+# dataset="Cifar10"
 
 ### interlayer type
-interlayer_type="Default"
-# interlayer_type="CAS"
+# interlayer_type="Default"
+interlayer_type="CAS"
 
 ### sync setting
 batchsize=64
@@ -49,11 +49,12 @@ dirichlet_alpha=1
 ### --- launch server process
 command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/server_process.py \
 	--port=$((20000+trial_no)) --world_size=$world_size  --init_period=$init_period \
-	--remarks=$remarks --trial_no=$trial_no --interlayer_type=$interlayer_type"
+	--remarks=$remarks --trial_no=$trial_no --interlayer_type=$interlayer_type \
+    --model=$model --dataset=$dataset"
 echo "launch server:"
 echo $command
 echo
-nohup ssh $server $command >> $log_dir/client_process_0.log 2>&1 &
+nohup ssh $server $command >> $log_dir/client_process_1.log 2>&1 &
 # nohup ssh $server $command >> $log_dir/server_process.log 2>&1 &
 sleep 1
 
