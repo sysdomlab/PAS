@@ -15,7 +15,7 @@ torch.set_printoptions(precision=20)
 CUDA = torch.cuda.is_available()
 
 CAS_hyperparams_profile = {
-    'ema_theta' : 0.9,
+    'ema_theta' : 0.95,
     'observe_window_size' : 5
 }
 
@@ -117,7 +117,6 @@ class CAS_AggregationService(Service):
             self.has_arrived = [0] * self.world_size
             self.tensor_collected_list = [0] * self.world_size
             self.first_has_arrived = 0
-            self.logging('finishing round %d' % round_id)
         else:
             self.lock.release()
         

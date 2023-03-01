@@ -15,12 +15,15 @@ round_transmit_param_volume = 0
 period_queue = queue.Queue(10)
 current_sync_period = 0
 update_index = None
+sync_lock = threading.Lock()
 
 def sync_thread(rank, round_id, tensor_to_transmit, mask, temp_period):
-        global current_sync_period, period_queue
+        global current_sync_period, period_queue, sync_lock
         while current_sync_period != temp_period:
+            sync_lock.acquire()
             if current_sync_period == 0: 
                  current_sync_period = period_queue.get()
+            sync_lock.release()
             time.sleep(0.01)
 
         logging('start_sync: %d' % temp_period)
@@ -37,10 +40,12 @@ def sync_thread(rank, round_id, tensor_to_transmit, mask, temp_period):
         round_transmit_param_volume += temp_len
 
 def sync_and_update_thread(rank, round_id, tensor_to_transmit, mask, temp_period):
-        global current_sync_period, period_queue
+        global current_sync_period, period_queue, sync_lock
         while current_sync_period != temp_period:
+            sync_lock.acquire()
             if current_sync_period == 0: 
                 current_sync_period = period_queue.get()
+            sync_lock.release()
             time.sleep(0.01)
         logging('start_sync: %d' % temp_period)
         t1 = time.time()
