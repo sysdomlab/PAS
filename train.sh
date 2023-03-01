@@ -30,16 +30,16 @@ echo 'logs in '$log_dir
 
 ### model
 # model="ResNet18_Cifar10"
-model="LSTM_KWS"
+# model="LSTM_KWS"
 # model="CNN_Cifar10"
 
 ### dateset
-dataset="KWS"
+# dataset="KWS"
 # dataset="Cifar10"
 
 ### interlayer type
-# interlayer_type="Default"
-interlayer_type="CAS"
+interlayer_type="Default"
+# interlayer_type="CAS"
 
 ### sync setting
 batchsize=64
