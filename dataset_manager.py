@@ -107,7 +107,7 @@ class Dataset_Manager():
 
 
     def get_dirichlet(self):
-        composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(10)), self.world_size)[self.partition_rank]
+        composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(5)), self.world_size)[self.partition_rank]
         # if self.partition_rank == 0:
         #     self.logging(np.argmax(np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size),axis=1))
         return (composition_ratio*self.local_size).astype(int)
@@ -118,7 +118,7 @@ class Dataset_Manager():
         self.set_seed(0)
         for i in range(self.world_size):
             temp_list = []
-            for i in range(10):
+            for i in range(5):
                 temp_list.append(random.randint(1,self.class_num))
             class_list.append(temp_list)
         self.logging(class_list)
