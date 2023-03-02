@@ -11,8 +11,8 @@ def Conv3x3BNReLU(in_channels, out_channels, stride, groups, size):
         temp_size[1] //= 2
     return nn.Sequential(
         nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=3, stride=stride, padding=1, groups=groups),
-        # nn.BatchNorm2d(out_channels),
-        nn.LayerNorm(temp_size, elementwise_affine=False),
+        nn.BatchNorm2d(out_channels),
+        # nn.LayerNorm(temp_size, elementwise_affine=False),
         nn.ReLU6(inplace=True)
     )
 
@@ -20,8 +20,8 @@ def Conv1x1BNReLU(in_channels, out_channels, size):
     temp_size = copy.deepcopy(size)
     return nn.Sequential(
         nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=1),
-        # nn.BatchNorm2d(out_channels),
-        nn.LayerNorm(temp_size, elementwise_affine=False),
+        nn.BatchNorm2d(out_channels),
+        # nn.LayerNorm(temp_size, elementwise_affine=False),
         nn.ReLU6(inplace=True)
     )
 
@@ -29,8 +29,8 @@ def Conv1x1BN(in_channels, out_channels, size):
     temp_size = copy.deepcopy(size)
     return nn.Sequential(
         nn.Conv2d(in_channels=in_channels, out_channels=out_channels, kernel_size=1, stride=1),
-        # nn.BatchNorm2d(out_channels)
-        nn.LayerNorm(temp_size, elementwise_affine=False)
+        nn.BatchNorm2d(out_channels)
+        # nn.LayerNorm(temp_size, elementwise_affine=False)
     )
 
 class InvertedResidual(nn.Module):
