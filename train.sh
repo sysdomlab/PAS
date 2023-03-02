@@ -3,10 +3,10 @@
 home=$HOME'/CASP-code'
 
 ### prepare master and workers
-# server='localhost'
-server='16.162.205.1'
-clients='16.162.24.129 18.166.62.132 43.198.86.93 16.162.34.42 43.198.14.118 18.162.112.54 18.166.226.217 16.163.149.8 18.162.149.135 16.162.45.172 16.163.142.94 18.166.29.120 18.163.114.13 18.162.112.109 16.163.155.86 43.198.11.132 16.162.118.131 16.163.149.227 18.166.215.47 16.162.119.231'
-# clients='localhost localhost'
+server='localhost'
+# server='16.162.205.1'
+# clients='16.162.24.129 18.166.62.132 43.198.86.93 16.162.34.42 43.198.14.118 18.162.112.54 18.166.226.217 16.163.149.8 18.162.149.135 16.162.45.172 16.163.142.94 18.166.29.120 18.163.114.13 18.162.112.109 16.163.155.86 43.198.11.132 16.162.118.131 16.163.149.227 18.166.215.47 16.162.119.231'
+clients='localhost localhost'
 
 echo 'Server_host: '$server
 echo 'Client_hosts: '$clients
@@ -39,12 +39,12 @@ model="ResNet18_Cifar10"
 dataset="Cifar10"
 
 ### interlayer type
-# interlayer_type="Default"
-interlayer_type="CAS"
+interlayer_type="Default"
+# interlayer_type="CAS"
 
 ### sync setting
 batchsize=64
-init_period=100
+init_period=20
 dirichlet_alpha=1
 
 ### --- launch server process
@@ -57,7 +57,7 @@ echo $command
 echo
 # nohup ssh $server $command >> $log_dir/client_process_1.log 2>&1 &
 nohup ssh $server $command >> $log_dir/server_process.log 2>&1 &
-sleep 1
+sleep 5
 
 ### --- launch sync process
 if [ "$interlayer_type" = "CAS" ]; then

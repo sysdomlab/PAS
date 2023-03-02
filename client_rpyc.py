@@ -19,6 +19,8 @@ class CAS_Interlayer():
         self.flattened_params_length = 0
         self.global_period = init_period
         self.init_period = init_period
+        self.tune_cell = int(init_period//5)
+        self.last_round_iter = 0
         self.sync_params_volume = 0
 
         self.tensor_of_flattened_params = None
@@ -71,13 +73,13 @@ class CAS_Interlayer():
 
     def generate_flattened_tensor_to_transmit(self, iter_id):
         """"""
-        round_iter = iter_id % self.global_period
-        if round_iter == 0: 
-            round_iter = self.global_period
-            self.round_id += 1
+        round_iter = iter_id - self.last_round_iter
+        if round_iter == self.global_period: 
+            self.last_round_iter = iter_id
         self.iter_id = iter_id
         if round_iter == 1: 
             self.freezing_mask.fill_(0)
+            self.round_id += 1
         if len(self.freezing_mask.nonzero()) != 0:
             self.freezing()
         if round_iter not in self.period_list:
@@ -88,14 +90,14 @@ class CAS_Interlayer():
         if length == 0: return 0
 
         self.sync_params_volume += length/1000000
-        if self.iter_id % self.init_period == 0: self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (self.iter_id, self.round_id, self.sync_params_volume))
+        if round_iter == self.global_period: self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (self.iter_id, self.round_id, self.sync_params_volume))
         for param in self.model.parameters():
             flattened_param = param.data.view(-1)
             self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flattened_param), 0)
         self.freezing_tensor_of_flattened_params[self.mask] = self.tensor_of_flattened_params[self.mask]
         self.freezing_mask += self.mask
         t1 = time.time()
-        if iter_id % self.init_period == 0:
+        if round_iter == self.global_period:
             self.connection.root.sync_and_update(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
             if CUDA else self.connection.root.sync_and_update(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
         else:
@@ -117,7 +119,7 @@ class CAS_Interlayer():
         index = rpyc.classic.obtain(index)
         global_tune_tag = index[-1:]
         index = index[:-1].cuda() if CUDA else index[:-1]
-        self.param_sync_period[index] -= self.init_period/5
+        self.param_sync_period[index] -= self.tune_cell
         if global_tune_tag == 1:
             self.tune_global_period()
 
@@ -135,8 +137,8 @@ class CAS_Interlayer():
     def tune_global_period(self):
         mask = (self.param_sync_period == self.global_period)
         self.logging('tune global period')
-        self.global_period -= self.init_period/5
-        self.param_sync_period[mask] -= self.init_period/5
+        self.global_period -= self.tune_cell
+        self.param_sync_period[mask] -= self.tune_cell
 
     def restore_model_from_tensor_received(self):
         """"""
