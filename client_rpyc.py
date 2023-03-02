@@ -8,11 +8,6 @@ except ImportError:
 
 CUDA = torch.cuda.is_available()
 
-ParamGIFTProfile = {
-    'ema_theta': 0.8,
-    'observe_window_size': 5,
-}
-
 
 class CAS_Interlayer():
     def __init__(self, model, init_period, rank, sync_process_port) -> None:
@@ -47,7 +42,7 @@ class CAS_Interlayer():
                     else torch.zeros(self.flattened_params_length, dtype=torch.bool)
         self.freezing_mask = copy.deepcopy(self.mask)
 
-        self.period_list = [64, 32, 16, 8, 4, 2, 1]
+        self.period_list = [100, 80, 60, 40, 20]
 
 
     def logging(self, string, hyperparameters=None):
@@ -93,7 +88,7 @@ class CAS_Interlayer():
         if length == 0: return 0
 
         self.sync_params_volume += length/1000000
-        if self.iter_id % max(self.init_period, 64) == 0: self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (self.iter_id, self.round_id, self.sync_params_volume))
+        if self.iter_id % self.init_period == 0: self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (self.iter_id, self.round_id, self.sync_params_volume))
         for param in self.model.parameters():
             flattened_param = param.data.view(-1)
             self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flattened_param), 0)
@@ -122,7 +117,7 @@ class CAS_Interlayer():
         index = rpyc.classic.obtain(index)
         global_tune_tag = index[-1:]
         index = index[:-1].cuda() if CUDA else index[:-1]
-        self.param_sync_period[index] //= 2
+        self.param_sync_period[index] -= self.init_period/5
         if global_tune_tag == 1:
             self.tune_global_period()
 
@@ -140,8 +135,8 @@ class CAS_Interlayer():
     def tune_global_period(self):
         mask = (self.param_sync_period == self.global_period)
         self.logging('tune global period')
-        self.global_period //= 2
-        self.param_sync_period[mask] //= 2
+        self.global_period -= self.init_period/5
+        self.param_sync_period[mask] -= self.init_period/5
 
     def restore_model_from_tensor_received(self):
         """"""

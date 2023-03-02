@@ -188,7 +188,7 @@ class CAS_AggregationService(Service):
 
         self.grad_consistency = abs(self.ema_positive_grad-self.ema_negative_grad) / (self.ema_positive_grad+self.ema_negative_grad)
         self.tune_mask = ((self.grad_consistency > self.min_grad_consistency) \
-                            & (self.grad_consistency < 0.1) & (self.param_sync_period > 1) \
+                            & (self.grad_consistency < 0.1) & (self.param_sync_period > self.initial_period/5) \
                             & (self.round_id > self.window_start_round + self.observe_window_size))
         self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency)
 
@@ -196,9 +196,9 @@ class CAS_AggregationService(Service):
         self.min_grad_consistency[self.temp_mask2] = self.grad_consistency[self.temp_mask2]
 
         index = self.tune_mask.nonzero()
-        self.param_sync_period[self.tune_mask] //= 2
+        self.param_sync_period[self.tune_mask] -= self.initial_period/5
         self.min_grad_consistency[self.tune_mask] = 1
-        self.observe_window_size[self.tune_mask] *= 2
+        self.observe_window_size[self.tune_mask] += 1
         self.ema_positive_grad[self.tune_mask] = 0
         self.ema_negative_grad[self.tune_mask] = 0
         self.window_start_round[self.tune_mask] = self.round_id
@@ -230,7 +230,7 @@ class CAS_AggregationService(Service):
                     proportion_list.append(0)
                     grad_consistency = 0       
             grad_consistency_list.append(round(float(grad_consistency),4))
-            temp_period //= 2
+            temp_period -= 20
 
         # ''' calculate proportion '''
         # calculate_proportion = 0
@@ -251,9 +251,9 @@ class CAS_AggregationService(Service):
         if tune == 1:
             mask = (self.param_sync_period == self.global_period)
             self.logging('tune global period')
-            self.global_period //= 2
-            self.param_sync_period[mask] //= 2
-            self.observe_window_size[mask] *= 2
+            self.global_period -= self.initial_period/5
+            self.param_sync_period[mask] -= self.initial_period/5
+            self.observe_window_size[mask] += 1
             self.ema_positive_grad[mask] = 0
             self.ema_negative_grad[mask] = 0
             self.min_grad_consistency[mask] = 1
