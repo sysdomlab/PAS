@@ -15,7 +15,7 @@ torch.set_printoptions(precision=20)
 CUDA = torch.cuda.is_available()
 
 CAS_hyperparams_profile = {
-    'ema_theta' : 0.95,
+    'ema_theta' : 0.9,
     'observe_window_size' : 5
 }
 
@@ -61,7 +61,7 @@ class CAS_AggregationService(Service):
         sys.stdout.flush()
 
     def exposed_sync_initial_model(self, rank, tensor_received):
-        # self.logging('receive rank %d, round_id 0' % rank)
+        self.logging('receive rank %d, round_id 0' % rank)
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
         self.lock.acquire()
         if self.first_has_arrived == 0:
@@ -90,11 +90,11 @@ class CAS_AggregationService(Service):
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
 
-        # self.logging('return rank %d, round_id 0' % rank)
+        self.logging('return rank %d, round_id 0' % rank)
         return self.averaged_tensor
 
     def exposed_aggregate(self, rank, round_id, tensor_received, temp_period):
-        # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
         self.lock.acquire()
         if self.first_has_arrived == 0:
@@ -123,11 +123,11 @@ class CAS_AggregationService(Service):
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
         
-        # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         return self.averaged_tensor
 
     def exposed_aggregate_and_update(self, rank, round_id, tensor_received, temp_period):
-        # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
         self.lock.acquire()
         if self.first_has_arrived == 0:
@@ -167,7 +167,7 @@ class CAS_AggregationService(Service):
         
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
-        # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         return [self.averaged_tensor, self.global_tune_index]
         
 
@@ -192,6 +192,10 @@ class CAS_AggregationService(Service):
                             & (self.round_id > self.window_start_round + self.observe_window_size))
         self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency)
 
+        self.window_start_round[self.temp_mask2] = self.round_id
+        self.min_grad_consistency[self.temp_mask2] = self.grad_consistency[self.temp_mask2]
+
+        index = self.tune_mask.nonzero()
         self.param_sync_period[self.tune_mask] //= 2
         self.min_grad_consistency[self.tune_mask] = 1
         self.observe_window_size[self.tune_mask] *= 2
@@ -199,10 +203,8 @@ class CAS_AggregationService(Service):
         self.ema_negative_grad[self.tune_mask] = 0
         self.window_start_round[self.tune_mask] = self.round_id
 
-        self.window_start_round[self.temp_mask2] = self.round_id
-        self.min_grad_consistency[self.temp_mask2] = self.grad_consistency[self.temp_mask2]
 
-        index = self.tune_mask.nonzero()
+
         self.global_tune_index = torch.cat((index, self.tune_global_period()), 0)   
 
     
@@ -229,6 +231,18 @@ class CAS_AggregationService(Service):
                     grad_consistency = 0       
             grad_consistency_list.append(round(float(grad_consistency),4))
             temp_period //= 2
+
+        # ''' calculate proportion '''
+        # calculate_proportion = 0
+        # temp_proportion = 1
+        # start_index = int(log2(self.initial_period/self.global_period))
+        # while start_index<len(proportion_list):
+        #     calculate_proportion += temp_proportion*proportion_list[start_index]
+        #     start_index += 1
+        #     temp_proportion /= 2
+        # if calculate_proportion < 40:
+        #     tune = torch.tensor([[1]])
+ 
         self.logging("sync_period_distribution: "+str(proportion_list))
         self.logging("param_averaging_grad_consistency: "+str(grad_consistency_list))
         average_consistency = self.grad_consistency.sum() / self.flattened_params_length  
