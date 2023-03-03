@@ -4,6 +4,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets, transforms
 import random, datetime, sys, pprint
 
+np.set_printoptions(20)
 class DatasetSplit(Dataset):
     def __init__(self, dataset, idxs):
         self.dataset = dataset
@@ -108,6 +109,7 @@ class Dataset_Manager():
 
     def get_dirichlet(self):
         composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(10)), self.world_size)[self.partition_rank]
+        self.logging(composition_ratio)
         # if self.partition_rank == 0:
         #     self.logging(np.argmax(np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size),axis=1))
         return (composition_ratio*self.local_size).astype(int)
@@ -116,21 +118,14 @@ class Dataset_Manager():
         local_idxs = []
         class_list = []
         self.set_seed(0)
-        for i in range(self.world_size):
-            temp_list = []
-            for i in range(10):
-                temp_list.append(random.randint(1,self.class_num))
-            class_list.append(temp_list)
-        self.logging(class_list)
-        class_list = class_list[self.partition_rank]
         labels = np.array(self.training_dataset.targets)
         sorted_idxs = np.argsort(labels)
         composition = self.get_dirichlet()
         # print('local dataset composition: ' + str(composition))
         class_pool_size = int(len(self.training_dataset) / self.class_num)
-        for i in range(len(class_list)):
+        for i in range(len(composition)):
             for j in range(composition[i]):
-                sample_index = sorted_idxs[int(class_pool_size*random.random()) + class_pool_size*(class_list[i]-1)] # randomly sampling
+                sample_index = sorted_idxs[int(class_pool_size*random.random()) + class_pool_size*i] # randomly sampling
                 # sample_index = sorted_idxs[(class_pool_size/self.world_size*self.rank+j) % class_pool_size + class_pool_size*i]
                 local_idxs.append(sample_index)
         return local_idxs

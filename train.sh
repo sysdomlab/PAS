@@ -39,12 +39,12 @@ model="ResNet18_Cifar10"
 dataset="Cifar10"
 
 ### interlayer type
-# interlayer_type="Default"
-interlayer_type="CAS"
+interlayer_type="Default"
+# interlayer_type="CAS"
 
 ### sync setting
 batchsize=64
-init_period=20
+init_period=1
 dirichlet_alpha=1
 
 ### --- launch server process
