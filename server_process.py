@@ -173,13 +173,14 @@ class CAS_AggregationService(Service):
             self.last_tensor_received[self.mask] = self.averaged_tensor
             self.update_period()
             
-            ''' testing '''
-            t1 = time.time()
-            test_tensor = copy.deepcopy(self.last_tensor_received)
-            testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
-            testing_thread.start()
-            t2 = time.time()
-            self.logging("start_testing_thread: %.4f" % (t2-t1))
+            if round_id % (max(100, self.initial_period)//self.global_period)==0:
+                ''' testing '''
+                t1 = time.time()
+                test_tensor = copy.deepcopy(self.last_tensor_received)
+                testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
+                testing_thread.start()
+                t2 = time.time()
+                self.logging("start_testing_thread: %.4f" % (t2-t1))
 
             ''' reset '''
             self.has_arrived = [0] * self.world_size

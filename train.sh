@@ -3,10 +3,10 @@
 home=$HOME'/CASP-code'
 
 ### prepare master and workers
-server='localhost'
-# server='16.162.205.1'
-# clients='16.162.24.129 18.166.62.132 43.198.86.93 16.162.34.42 43.198.14.118 18.162.112.54 18.166.226.217 16.163.149.8 18.162.149.135 16.162.45.172 16.163.142.94 18.166.29.120 18.163.114.13 18.162.112.109 16.163.155.86 43.198.11.132 16.162.118.131 16.163.149.227 18.166.215.47 16.162.119.231'
-clients='localhost localhost'
+# server='localhost'
+server='16.162.205.1'
+clients='18.163.112.214 18.162.149.191 16.163.141.88 16.162.45.130 18.166.225.51 18.162.111.137 16.163.146.64 18.162.111.65 18.163.182.179 18.166.178.80 18.166.30.86 43.198.86.162 18.163.182.123 18.162.154.99 18.163.124.20 16.163.143.211 18.163.114.212 16.162.45.177 18.167.20.19 18.166.62.148'
+# clients='localhost localhost'
 
 echo 'Server_host: '$server
 echo 'Client_hosts: '$clients
@@ -39,8 +39,8 @@ model="ResNet18_Cifar10"
 dataset="Cifar10"
 
 ### interlayer type
-interlayer_type="Default"
-# interlayer_type="CAS"
+# interlayer_type="Default"
+interlayer_type="CAS"
 
 ### sync setting
 batchsize=64
