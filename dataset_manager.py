@@ -4,7 +4,7 @@ from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets, transforms
 import random, datetime, sys, pprint
 
-np.set_printoptions(20)
+np.set_printoptions(4)
 class DatasetSplit(Dataset):
     def __init__(self, dataset, idxs):
         self.dataset = dataset
@@ -108,26 +108,30 @@ class Dataset_Manager():
 
 
     def get_dirichlet(self):
-        composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(10)), self.world_size)[self.partition_rank]
+        composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size)
         self.logging(composition_ratio)
         # if self.partition_rank == 0:
         #     self.logging(np.argmax(np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size),axis=1))
         return (composition_ratio*self.local_size).astype(int)
 
     def get_index_partition(self):
-        local_idxs = []
-        class_list = []
+        local_idxs = np.array([])
         self.set_seed(0)
         labels = np.array(self.training_dataset.targets)
         sorted_idxs = np.argsort(labels)
         composition = self.get_dirichlet()
+        class_accumulate = np.sum(composition[:self.partition_rank], axis=0)
+        composition = composition[self.partition_rank]
         # print('local dataset composition: ' + str(composition))
         class_pool_size = int(len(self.training_dataset) / self.class_num)
-        for i in range(len(composition)):
-            for j in range(composition[i]):
-                sample_index = sorted_idxs[int(class_pool_size*random.random()) + class_pool_size*i] # randomly sampling
-                # sample_index = sorted_idxs[(class_pool_size/self.world_size*self.rank+j) % class_pool_size + class_pool_size*i]
-                local_idxs.append(sample_index)
+        for i in range(self.class_num):
+            if class_accumulate[i] + composition[i] <= class_pool_size:
+                client_class_index = sorted_idxs[class_pool_size*i+class_accumulate[i]:class_pool_size*i+class_accumulate[i]+composition[i]]
+            else:
+                client_class_index = np.concatenate((sorted_idxs[class_pool_size*i+class_accumulate[i]:class_pool_size*(i+1)], \
+                                                     sorted_idxs[class_pool_size*i:class_pool_size*(i-1)+class_accumulate[i]+composition[i]]),axis=0)
+            local_idxs = np.concatenate((local_idxs, client_class_index), axis = 0)
+            local_idxs = local_idxs.astype(int)
         return local_idxs
 
     # def get_index_partition(self):

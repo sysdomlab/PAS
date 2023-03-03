@@ -21,7 +21,7 @@ ModelHyperparameterDict = {
         'SVM_Points':
             {'lr':0.01, 'wd':0, 'optimizer': torch.optim.SGD, 'loss_func': torch.nn.CrossEntropyLoss()},
         'LSTM_KWS':
-            {'lr':0.05, 'wd':0.01, 'optimizer': torch.optim.SGD, 'loss_func': torch.nn.CrossEntropyLoss()},
+            {'lr':0.01, 'wd':0.01, 'optimizer': torch.optim.SGD, 'loss_func': torch.nn.CrossEntropyLoss()},
         'ResNet18_Cifar10':
             {'lr':0.1, 'wd':0.001, 'optimizer': torch.optim.SGD, 'loss_func': torch.nn.CrossEntropyLoss()},
         'VGG16_Cifar10':

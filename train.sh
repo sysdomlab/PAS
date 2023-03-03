@@ -29,22 +29,22 @@ rm -rf Latest_Log && ln -s $log_dir Latest_Log
 echo 'logs in '$log_dir
 
 ### model
-model="ResNet18_Cifar10"
+# model="ResNet18_Cifar10"
 # model="MobileNetV2_Cifar10"
-# model="LSTM_KWS"
+model="LSTM_KWS"
 # model="CNN_Cifar10"
 
 ### dateset
-# dataset="KWS"
-dataset="Cifar10"
+dataset="KWS"
+# dataset="Cifar10"
 
 ### interlayer type
 interlayer_type="Default"
 # interlayer_type="CAS"
 
 ### sync setting
-batchsize=64
-init_period=1
+batchsize=100
+init_period=100
 dirichlet_alpha=1
 
 ### --- launch server process
