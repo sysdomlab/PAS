@@ -125,11 +125,11 @@ class Dataset_Manager():
         # print('local dataset composition: ' + str(composition))
         class_pool_size = int(len(self.training_dataset) / self.class_num)
         for i in range(self.class_num):
-            if class_accumulate[i] + composition[i] <= class_pool_size:
-                client_class_index = sorted_idxs[class_pool_size*i+class_accumulate[i]:class_pool_size*i+class_accumulate[i]+composition[i]]
+            if class_accumulate[i]%class_pool_size <= (class_accumulate[i]+composition[i]) % class_pool_size:
+                client_class_index = sorted_idxs[class_pool_size*i+(class_accumulate[i])%class_pool_size:class_pool_size*i+(class_accumulate[i]+composition[i])%class_pool_size]
             else:
-                client_class_index = np.concatenate((sorted_idxs[class_pool_size*i+class_accumulate[i]:class_pool_size*(i+1)], \
-                                                     sorted_idxs[class_pool_size*i:class_pool_size*(i-1)+class_accumulate[i]+composition[i]]),axis=0)
+                client_class_index = np.concatenate((sorted_idxs[class_pool_size*i+class_accumulate[i]%class_pool_size:class_pool_size*(i+1)], \
+                                                     sorted_idxs[class_pool_size*i:class_pool_size*i+(class_accumulate[i]+composition[i])%class_pool_size]),axis=0)
             local_idxs = np.concatenate((local_idxs, client_class_index), axis = 0)
             local_idxs = local_idxs.astype(int)
         return local_idxs
