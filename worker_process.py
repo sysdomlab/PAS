@@ -19,7 +19,7 @@ class Client():
         ''' Variables required for local training. '''
         self.rank = sync_profile['rank']
         self.init_period = sync_prefile['init_period']
-        self.max_epoch = 3000
+        self.max_epoch = 10000
 
         ''' Model Initialization'''
         self.model_manager = Model_Manager(local_profile['model_profile'])

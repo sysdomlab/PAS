@@ -118,7 +118,7 @@ class CAS_AggregationService(Service):
         return self.averaged_tensor
 
     def exposed_aggregate(self, rank, round_id, tensor_received, temp_period):
-        self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
         self.lock.acquire()
         if self.first_has_arrived == 0:
@@ -147,11 +147,11 @@ class CAS_AggregationService(Service):
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
         
-        self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         return self.averaged_tensor
 
     def exposed_aggregate_and_update(self, rank, round_id, tensor_received, temp_period):
-        self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
         self.lock.acquire()
         if self.first_has_arrived == 0:
@@ -192,7 +192,7 @@ class CAS_AggregationService(Service):
         
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
-        self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         return [self.averaged_tensor, self.global_tune_index]
         
 
@@ -305,7 +305,6 @@ class Default_AggregationService(Service):
         sys.stdout.flush()
 
     def exposed_sync_initial_model(self, rank, tensor_received):
-        # self.logging('receive rank %d, sync_initial_model' % (rank))
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
         self.lock.acquire()
         if self.first_has_arrived == 0:
@@ -313,8 +312,13 @@ class Default_AggregationService(Service):
             self.flattened_params_length = len(tensor_received)
 
         self.has_arrived[rank] = 1
+        self.logging('receive rank %d, sync_initial_model' % (rank))
+        self.logging(sum(self.has_arrived))
+        self.logging(self.world_size)
         if sum(self.has_arrived) == self.world_size:
+            self.logging('in')
             self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
+            self.logging('2')
             ''' reset '''
             self.has_arrived = [0]*self.world_size
             self.tensor_collected_list = [0]*self.world_size

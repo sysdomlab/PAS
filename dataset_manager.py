@@ -109,7 +109,6 @@ class Dataset_Manager():
 
     def get_dirichlet(self):
         composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size)
-        self.logging(composition_ratio)
         # if self.partition_rank == 0:
         #     self.logging(np.argmax(np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size),axis=1))
         return (composition_ratio*self.local_size).astype(int)
@@ -122,6 +121,7 @@ class Dataset_Manager():
         composition = self.get_dirichlet()
         class_accumulate = np.sum(composition[:self.partition_rank], axis=0)
         composition = composition[self.partition_rank]
+        self.logging(composition)
         # print('local dataset composition: ' + str(composition))
         class_pool_size = int(len(self.training_dataset) / self.class_num)
         for i in range(self.class_num):
