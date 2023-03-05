@@ -29,9 +29,10 @@ def sync_thread(rank, round_id, tensor_to_transmit, mask, temp_period):
         logging('start_sync: %d' % temp_period)
         t1 = time.time()
         tensor_to_restore = connection.root.aggregate(rank, round_id, tensor_to_transmit, temp_period)
-        tensor_to_restore = rpyc.classic.obtain(tensor_to_restore)
         t2 = time.time()
-        logging('inner_sync_time: %.4f' % (t2-t1))
+        tensor_to_restore = rpyc.classic.obtain(tensor_to_restore)
+        t3 = time.time()
+        logging('inner_sync_time: %.4f, obtain_time: %.4f' % (t3-t1,t3-t2))
         current_sync_period = 0
         global flattened_tensor_to_restore
         flattened_tensor_to_restore[mask] = tensor_to_restore
@@ -50,9 +51,10 @@ def sync_and_update_thread(rank, round_id, tensor_to_transmit, mask, temp_period
         logging('start_sync: %d' % temp_period)
         t1 = time.time()
         temp_list = connection.root.aggregate_and_update(rank, round_id, tensor_to_transmit, temp_period)
-        temp_list = rpyc.classic.obtain(temp_list)
         t2 = time.time()
-        logging('inner_sync_time: %.4f' % (t2-t1))
+        temp_list = rpyc.classic.obtain(temp_list)
+        t3 = time.time()
+        logging('inner_sync_time: %.4f, obtain_time: %.4f' % (t3-t1,t3-t2))
         current_sync_period = 0
         global flattened_tensor_to_restore
         flattened_tensor_to_restore[mask] = temp_list[0]

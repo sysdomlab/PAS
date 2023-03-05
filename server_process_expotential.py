@@ -86,7 +86,10 @@ class CAS_AggregationService(Service):
 
     def exposed_sync_initial_model(self, rank, tensor_received):
         self.logging('receive rank %d, round_id 0' % rank)
+        t1 = time.time()
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
+        t2 = time.time()
+        self.logging('rank %d, obtain_time: %.4f'%(rank,t2-t1))
         self.lock.acquire()
         if self.first_has_arrived == 0:
             self.first_has_arrived = 1
@@ -118,8 +121,11 @@ class CAS_AggregationService(Service):
         return self.averaged_tensor
 
     def exposed_aggregate(self, rank, round_id, tensor_received, temp_period):
-        # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        t1 = time.time()
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
+        t2 = time.time()
+        self.logging('rank %d, obtain_time: %.4f'%(rank,t2-t1))
         self.lock.acquire()
         if self.first_has_arrived == 0:
             self.mask = (self.param_sync_period == temp_period)
@@ -147,12 +153,15 @@ class CAS_AggregationService(Service):
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
         
-        # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         return self.averaged_tensor
 
     def exposed_aggregate_and_update(self, rank, round_id, tensor_received, temp_period):
-        # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        t1 = time.time()
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
+        t2 = time.time()
+        self.logging('rank %d, obtain_time: %.4f'%(rank,t2-t1))
         self.lock.acquire()
         if self.first_has_arrived == 0:
             self.mask = (self.param_sync_period == temp_period)
@@ -162,13 +171,11 @@ class CAS_AggregationService(Service):
             self.first_has_arrived = 1
             self.round_id = round_id
 
-
         self.has_arrived[rank] = 1
         if sum(self.has_arrived) == self.world_size:
             self.lock.release()
             self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
             self.pooling_and_smoothing()
-
             
             self.last_tensor_received[self.mask] = self.averaged_tensor
             self.update_period()
@@ -192,7 +199,7 @@ class CAS_AggregationService(Service):
         
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
-        # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         return [self.averaged_tensor, self.global_tune_index]
         
 
@@ -238,7 +245,7 @@ class CAS_AggregationService(Service):
         proportion_list = []
         grad_consistency_list = []
         tune = torch.tensor([[0]])
-        while temp_period >= 1:
+        while temp_period >= 6:
             mask = (self.param_sync_period == temp_period)
             index = mask.nonzero()
             temp_len = len(index)
