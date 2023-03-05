@@ -8,7 +8,7 @@ from rpyc.utils.server import ThreadedServer
 from model_manager import Model_Manager
 from dataset_manager import Dataset_Manager
 from sync_manager import Sync_Manager
-from client_rpyc import CAS_Manager
+from client_process_expotential import CAS_Manager
 
 torch.set_printoptions(precision=20)
 CUDA = torch.cuda.is_available()

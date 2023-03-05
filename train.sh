@@ -40,16 +40,18 @@ dataset="KWS"
 # dataset="Cifar10"
 
 ### interlayer type
-interlayer_type="Default"
-# interlayer_type="CAS"
+# interlayer_type="Default"
+interlayer_type="CAS"
 
 ### sync setting
-batchsize=20
+batchsize=100
 init_period=100
 dirichlet_alpha=0.1
 
 ### --- launch server process
-command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/server_process.py \
+server_job=server_process_expotential.py
+# server_job=server_process_linear.py
+command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/$server_job \
 	--port=$((20000+trial_no)) --world_size=$world_size  --init_period=$init_period \
 	--remarks=$remarks --trial_no=$trial_no --interlayer_type=$interlayer_type \
     --model=$model --dataset=$dataset"

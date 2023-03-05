@@ -342,7 +342,7 @@ class Default_AggregationService(Service):
         if sum(self.has_arrived) == self.world_size:
             self.lock.release()
             self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
-            if round_id % (400//self.init_period) == 0:
+            if round_id % (100//self.init_period) == 0:
                 ''' testing '''
                 t1 = time.time()
                 test_tensor = copy.deepcopy(self.averaged_tensor)

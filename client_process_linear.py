@@ -169,10 +169,9 @@ class CAS_Manager():
         t2 = time.time()
         self.logging('generate_time: %.4f' % (t2-t1))
         self.sync_round_id += 1
-        if iter_id % self.init_period == 0:
-            t1 = time.time()
-            self.transmit_interlayer.update_period()
-            t2 = time.time()
-            self.logging('update_period_time: %.4f' % (t2-t1))
+        t1 = time.time()
+        self.transmit_interlayer.update_period()
+        t2 = time.time()
+        self.logging('update_period_time: %.4f' % (t2-t1))
         self.transmit_interlayer.restore_model_from_tensor_received()
         return True
