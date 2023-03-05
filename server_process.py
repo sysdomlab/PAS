@@ -340,9 +340,9 @@ class Default_AggregationService(Service):
         self.lock.acquire()
         self.has_arrived[rank] = 1
         if sum(self.has_arrived) == self.world_size:
+            self.lock.release()
             self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
-
-            if round_id % (100//self.init_period) == 0:
+            if round_id % (400//self.init_period) == 0:
                 ''' testing '''
                 t1 = time.time()
                 test_tensor = copy.deepcopy(self.averaged_tensor)
@@ -357,7 +357,8 @@ class Default_AggregationService(Service):
             self.first_has_arrived = 0
 
             self.logging('finishing round %d' % round_id)
-        self.lock.release()
+        else:
+            self.lock.release()
 
 
         ''' otherwise, keep spining (blocked) '''
