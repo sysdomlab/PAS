@@ -180,14 +180,14 @@ class CAS_AggregationService(Service):
             self.last_tensor_received[self.mask] = self.averaged_tensor
             self.update_period()
             
-            if round_id % (max(100, self.initial_period)//self.global_period)==0:
-                ''' testing '''
-                t1 = time.time()
-                test_tensor = copy.deepcopy(self.last_tensor_received)
-                testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
-                testing_thread.start()
-                t2 = time.time()
-                self.logging("start_testing_thread: %.4f" % (t2-t1))
+            # if round_id % (max(100, self.initial_period)//self.global_period)==0:
+            ''' testing '''
+            t1 = time.time()
+            test_tensor = copy.deepcopy(self.last_tensor_received)
+            testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
+            testing_thread.start()
+            t2 = time.time()
+            self.logging("start_testing_thread: %.4f" % (t2-t1))
 
             ''' reset '''
             self.has_arrived = [0] * self.world_size
@@ -220,7 +220,7 @@ class CAS_AggregationService(Service):
 
         self.grad_consistency = abs(self.ema_positive_grad-self.ema_negative_grad) / (self.ema_positive_grad+self.ema_negative_grad)
         self.tune_mask = ((self.grad_consistency > self.min_grad_consistency) \
-                            & (self.grad_consistency < 0.1) & (self.param_sync_period > 6) \
+                            & (self.grad_consistency < 0.1) & (self.param_sync_period > 1) \
                             & (self.round_id > self.window_start_round + self.observe_window_size))
         self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency)
 

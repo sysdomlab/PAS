@@ -22,6 +22,7 @@ class CAS_Interlayer():
         self.tune_cell = int(init_period//5)
         self.last_round_iter = 0
         self.sync_params_volume = 0
+        self.last_update_iter = 0
 
         self.tensor_of_flattened_params = None
         self.freezing_tensor_of_flattened_params = None
@@ -44,7 +45,7 @@ class CAS_Interlayer():
                     else torch.zeros(self.flattened_params_length, dtype=torch.bool)
         self.freezing_mask = copy.deepcopy(self.mask)
 
-        self.period_list = [100, 50, 25, 12, 6]
+        self.period_list = [64, 32, 16, 8, 4]
         self.logging('-- Expotential CAS ')
 
 
@@ -101,6 +102,7 @@ class CAS_Interlayer():
         if iter_id % self.init_period == 0:
             self.connection.root.sync_and_update(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
             if CUDA else self.connection.root.sync_and_update(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
+            self.last_update_iter = iter_id
         else:
             self.connection.root.sync(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
             if CUDA else self.connection.root.sync(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
