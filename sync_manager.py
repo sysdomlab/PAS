@@ -234,9 +234,10 @@ class Sync_Manager():
             if CUDA: flattened_tensor_to_transmit = flattened_tensor_to_transmit.cpu()
             t1 = time.time()
             tensor_received = self.connection.root.aggregate(self.rank, self.sync_round_id, flattened_tensor_to_transmit)
-            tensor_received = rpyc.classic.obtain(tensor_received).cuda() if CUDA else rpyc.classic.obtain(tensor_received)
             t2 = time.time()
-            self.logging('sync_time: %.4f' % (t2-t1))
+            tensor_received = rpyc.classic.obtain(tensor_received).cuda() if CUDA else rpyc.classic.obtain(tensor_received)
+            t3 = time.time()
+            self.logging('sync_time: %.4f, obtain_time: %.4f' % (t3-t2,t2-t1))
             self.transmit_interlayer.restore_model_from_tensor_received(tensor_received)
             return True
         return False

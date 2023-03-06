@@ -291,7 +291,10 @@ class Default_AggregationService(Service):
 
     def exposed_aggregate(self, rank, round_id, tensor_received):
         # self.logging('receive rank %d, round_id %d' % (rank, round_id))
+        t1 = time.time()
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
+        t2 = time.time()
+        self.logging('rank %d, obtain time %.4f' % (rank, t2-t1))
         self.round_id = max(self.round_id, round_id)
 
         self.lock.acquire()
