@@ -11,7 +11,7 @@ from math import log2
 from model_manager import Model_Manager
 from dataset_manager import Dataset_Manager
 
-torch.set_printoptions(precision=20)
+torch.set_printoptions(precision=4)
 CUDA = torch.cuda.is_available()
 
 CAS_hyperparams_profile = {
@@ -23,7 +23,6 @@ test_lock = Lock()
 model = None
 testing_dataloader = None
 cutoff_index_list, param_shape_list = [], []
-local_profile = None
 
 class CAS_AggregationService(Service):
     def __init__(self, world_size, init_period) -> None:
@@ -36,7 +35,6 @@ class CAS_AggregationService(Service):
         self.round_id = 0
         self.initial_period = init_period
         self.global_period = init_period
-        self.tune_cell = int(init_period//5)
 
         self.param_sync_period = None
         self.last_tensor_received = None
@@ -57,39 +55,14 @@ class CAS_AggregationService(Service):
         print('- CAS Hyperparams Profile: ')
         pprint.pprint(CAS_hyperparams_profile)
         sys.stdout.flush()
-        # self.create_model()
-
-    def create_model(self):
-        global model, cutoff_index_list, param_shape_list,testing_dataloader
-        ''' Model Initialization'''
-        model_manager = Model_Manager(local_profile['model_profile'])
-        model = model_manager.load_model()
-        # optimizer = model_manager.get_optimizer()
-        # loss_func = model_manager.get_loss_func()
-
-        ''' Initialization Index List '''
-        s_index = 0
-        for param in model.parameters():
-            param_shape_list.append(param.data.shape)
-            flatten_params = param.data.view(-1)
-            e_index = s_index + len(flatten_params)
-            cutoff_index_list.append([s_index, e_index])
-            s_index = e_index
-
-        ''' Dataset Initialization '''
-        dataset_manager = Dataset_Manager(local_profile['dataset_profile'])
-        testing_dataloader = dataset_manager.get_testing_dataloader()
 
     def logging(self, string):
         print('['+str(datetime.datetime.now())+'] [Server] '+str(string))
         sys.stdout.flush()
 
     def exposed_sync_initial_model(self, rank, tensor_received):
-        self.logging('receive rank %d, round_id 0' % rank)
-        t1 = time.time()
+        # self.logging('receive rank %d, round_id 0' % rank)
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
-        t2 = time.time()
-        self.logging('rank %d, obtain_time: %.4f'%(rank,t2-t1))
         self.lock.acquire()
         if self.first_has_arrived == 0:
             self.first_has_arrived = 1
@@ -117,15 +90,12 @@ class CAS_AggregationService(Service):
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
 
-        self.logging('return rank %d, round_id 0' % rank)
+        # self.logging('return rank %d, round_id 0' % rank)
         return self.averaged_tensor
 
     def exposed_aggregate(self, rank, round_id, tensor_received, temp_period):
-        self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
-        t1 = time.time()
+        # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
-        t2 = time.time()
-        self.logging('rank %d, obtain_time: %.4f'%(rank,t2-t1))
         self.lock.acquire()
         if self.first_has_arrived == 0:
             self.mask = (self.param_sync_period == temp_period)
@@ -147,21 +117,19 @@ class CAS_AggregationService(Service):
             self.has_arrived = [0] * self.world_size
             self.tensor_collected_list = [0] * self.world_size
             self.first_has_arrived = 0
+            self.logging('finishing round %d' % round_id)
         else:
             self.lock.release()
         
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
         
-        self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         return self.averaged_tensor
 
     def exposed_aggregate_and_update(self, rank, round_id, tensor_received, temp_period):
-        self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
-        t1 = time.time()
+        # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
-        t2 = time.time()
-        self.logging('rank %d, obtain_time: %.4f'%(rank,t2-t1))
         self.lock.acquire()
         if self.first_has_arrived == 0:
             self.mask = (self.param_sync_period == temp_period)
@@ -171,16 +139,17 @@ class CAS_AggregationService(Service):
             self.first_has_arrived = 1
             self.round_id = round_id
 
+
         self.has_arrived[rank] = 1
         if sum(self.has_arrived) == self.world_size:
             self.lock.release()
             self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
             self.pooling_and_smoothing()
+
             
             self.last_tensor_received[self.mask] = self.averaged_tensor
             self.update_period()
-            
-            # if round_id % (max(100, self.initial_period)//self.global_period)==0:
+
             ''' testing '''
             t1 = time.time()
             test_tensor = copy.deepcopy(self.last_tensor_received)
@@ -199,7 +168,7 @@ class CAS_AggregationService(Service):
         
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
-        self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         return [self.averaged_tensor, self.global_tune_index]
         
 
@@ -224,10 +193,6 @@ class CAS_AggregationService(Service):
                             & (self.round_id > self.window_start_round + self.observe_window_size))
         self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency)
 
-        self.window_start_round[self.temp_mask2] = self.round_id
-        self.min_grad_consistency[self.temp_mask2] = self.grad_consistency[self.temp_mask2]
-
-        index = self.tune_mask.nonzero()
         self.param_sync_period[self.tune_mask] //= 2
         self.min_grad_consistency[self.tune_mask] = 1
         self.observe_window_size[self.tune_mask] *= 2
@@ -235,8 +200,10 @@ class CAS_AggregationService(Service):
         self.ema_negative_grad[self.tune_mask] = 0
         self.window_start_round[self.tune_mask] = self.round_id
 
+        self.window_start_round[self.temp_mask2] = self.round_id
+        self.min_grad_consistency[self.temp_mask2] = self.grad_consistency[self.temp_mask2]
 
-
+        index = self.tune_mask.nonzero()
         self.global_tune_index = torch.cat((index, self.tune_global_period()), 0)   
 
     
@@ -245,7 +212,7 @@ class CAS_AggregationService(Service):
         proportion_list = []
         grad_consistency_list = []
         tune = torch.tensor([[0]])
-        while temp_period >= 6:
+        while temp_period >= 1:
             mask = (self.param_sync_period == temp_period)
             index = mask.nonzero()
             temp_len = len(index)
@@ -263,18 +230,6 @@ class CAS_AggregationService(Service):
                     grad_consistency = 0       
             grad_consistency_list.append(round(float(grad_consistency),4))
             temp_period //= 2
-
-        # ''' calculate proportion '''
-        # calculate_proportion = 0
-        # temp_proportion = 1
-        # start_index = int(log2(self.initial_period/self.global_period))
-        # while start_index<len(proportion_list):
-        #     calculate_proportion += temp_proportion*proportion_list[start_index]
-        #     start_index += 1
-        #     temp_proportion /= 2
-        # if calculate_proportion < 40:
-        #     tune = torch.tensor([[1]])
- 
         self.logging("sync_period_distribution: "+str(proportion_list))
         self.logging("param_averaging_grad_consistency: "+str(grad_consistency_list))
         average_consistency = self.grad_consistency.sum() / self.flattened_params_length  
@@ -295,11 +250,10 @@ class CAS_AggregationService(Service):
 
 
 class Default_AggregationService(Service):
-    def __init__(self, world_size, init_period):
+    def __init__(self, world_size):
         self.world_size = world_size
         self.round_id = 0
         self.flattened_params_length = 0
-        self.init_period = init_period
         self.lock = Lock()
 
         self.averaged_tensor = None
@@ -312,7 +266,7 @@ class Default_AggregationService(Service):
         sys.stdout.flush()
 
     def exposed_sync_initial_model(self, rank, tensor_received):
-        self.logging('receive rank %d, sync_initial_model' % (rank))
+        # self.logging('receive rank %d, sync_initial_model' % (rank))
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
         self.lock.acquire()
         if self.first_has_arrived == 0:
@@ -336,27 +290,22 @@ class Default_AggregationService(Service):
 
 
     def exposed_aggregate(self, rank, round_id, tensor_received):
-        self.logging('receive rank %d, round_id %d' % (rank, round_id))
-        t1 = time.time()
+        # self.logging('receive rank %d, round_id %d' % (rank, round_id))
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
-        t2 = time.time()
-        self.logging('rank %d obtain_time %.4f' % (rank, t2-t1))
         self.round_id = max(self.round_id, round_id)
 
         self.lock.acquire()
         self.has_arrived[rank] = 1
         if sum(self.has_arrived) == self.world_size:
-            self.logging('last_rank %d' % rank)
-            self.lock.release()
             self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
-            if round_id % (100//self.init_period) == 0:
-                ''' testing '''
-                t1 = time.time()
-                test_tensor = copy.deepcopy(self.averaged_tensor)
-                testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
-                testing_thread.start()
-                t2 = time.time()
-                self.logging("start_testing_thread: %.4f" % (t2-t1))
+
+            ''' testing '''
+            t1 = time.time()
+            test_tensor = copy.deepcopy(self.averaged_tensor)
+            testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
+            testing_thread.start()
+            t2 = time.time()
+            self.logging("start_testing_thread: %.4f" % (t2-t1))
 
             ''' reset '''
             self.has_arrived = [0] * self.world_size
@@ -364,8 +313,7 @@ class Default_AggregationService(Service):
             self.first_has_arrived = 0
 
             self.logging('finishing round %d' % round_id)
-        else:
-            self.lock.release()
+        self.lock.release()
 
 
         ''' otherwise, keep spining (blocked) '''
@@ -384,7 +332,6 @@ def test_thread(round_id, tensor_to_restore):
         total_test_number = 0.0
         # loss = 0.0
         ''' restore param '''
-        if CUDA: tensor_to_restore = tensor_to_restore.cuda()
         for i, param in enumerate(model.parameters()):
             param.data = tensor_to_restore[cutoff_index_list[i][0]:cutoff_index_list[i][1]].view(param_shape_list[i])
 
@@ -415,6 +362,7 @@ def logging(string):
 
 
 if __name__ == "__main__":
+
     ''' Parse arguments and create profile. '''
     parser = argparse.ArgumentParser()
     parser.add_argument('--port', type=int, default=20000)
@@ -441,12 +389,11 @@ if __name__ == "__main__":
             'is_iid' : False,
             'world_size' : 20,
             'partition_rank' : 0,
-            'batch_size' : 100,
+            'batch_size' : 64,
             'dirichlet_alpha' : 1
         }
     }
-
-    logging('create_model')
+    
     ''' Model Initialization'''
     model_manager = Model_Manager(local_profile['model_profile'])
     model = model_manager.load_model()
@@ -462,18 +409,17 @@ if __name__ == "__main__":
         cutoff_index_list.append([s_index, e_index])
         s_index = e_index
 
-    logging('create_dataloader')
+
     ''' Dataset Initialization '''
     dataset_manager = Dataset_Manager(local_profile['dataset_profile'])
     testing_dataloader = dataset_manager.get_testing_dataloader()
-    
+
+
     if args.interlayer_type == 'CAS':
         service = CAS_AggregationService(args.world_size, args.init_period)
     else:
-        service = Default_AggregationService(args.world_size, args.init_period)
+        service = Default_AggregationService(args.world_size)
     rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG
     rpyc_config['allow_pickle'] = True
     server = ThreadedServer(service, port=args.port, protocol_config=rpyc_config)
     server.start()
-
-

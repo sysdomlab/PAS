@@ -178,7 +178,7 @@ class Default_Interlayer():
             flattened_param = p.data.view(-1)
             self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flattened_param),0)
         self.sum_num_of_param += self.flattened_params_length/1000000
-        if iter_id % max(self.init_period, 100) == 0: self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (iter_id, self.round, self.sum_num_of_param))
+        if iter_id % max(self.init_period, 64) == 0: self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (iter_id, self.round, self.sum_num_of_param))
         return self.tensor_of_flattened_params
 
     def restore_model_from_tensor_received(self, tensor_received):
@@ -234,10 +234,9 @@ class Sync_Manager():
             if CUDA: flattened_tensor_to_transmit = flattened_tensor_to_transmit.cpu()
             t1 = time.time()
             tensor_received = self.connection.root.aggregate(self.rank, self.sync_round_id, flattened_tensor_to_transmit)
-            t2 = time.time()
             tensor_received = rpyc.classic.obtain(tensor_received).cuda() if CUDA else rpyc.classic.obtain(tensor_received)
-            t3 = time.time()
-            self.logging('sync_time: %.4f, obtain_time: %.4f' % (t3-t1,t2-t1))
+            t2 = time.time()
+            self.logging('sync_time: %.4f' % (t2-t1))
             self.transmit_interlayer.restore_model_from_tensor_received(tensor_received)
             return True
         return False
