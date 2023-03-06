@@ -220,7 +220,7 @@ class CAS_AggregationService(Service):
 
         self.grad_consistency = abs(self.ema_positive_grad-self.ema_negative_grad) / (self.ema_positive_grad+self.ema_negative_grad)
         self.tune_mask = ((self.grad_consistency > self.min_grad_consistency) \
-                            & (self.grad_consistency < 0.1) & (self.param_sync_period > 1) \
+                            & (self.grad_consistency < 0.1) & (self.param_sync_period > 4) \
                             & (self.round_id > self.window_start_round + self.observe_window_size))
         self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency)
 
@@ -285,7 +285,7 @@ class CAS_AggregationService(Service):
             self.logging('tune global period')
             self.global_period //= 2
             self.param_sync_period[mask] //= 2
-            self.observe_window_size[mask] += 1
+            self.observe_window_size[mask] *= 2
             self.ema_positive_grad[mask] = 0
             self.ema_negative_grad[mask] = 0
             self.min_grad_consistency[mask] = 1
@@ -312,6 +312,7 @@ class Default_AggregationService(Service):
         sys.stdout.flush()
 
     def exposed_sync_initial_model(self, rank, tensor_received):
+        self.logging('receive rank %d, sync_initial_model' % (rank))
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
         self.lock.acquire()
         if self.first_has_arrived == 0:
@@ -319,13 +320,8 @@ class Default_AggregationService(Service):
             self.flattened_params_length = len(tensor_received)
 
         self.has_arrived[rank] = 1
-        self.logging('receive rank %d, sync_initial_model' % (rank))
-        self.logging(sum(self.has_arrived))
-        self.logging(self.world_size)
         if sum(self.has_arrived) == self.world_size:
-            self.logging('in')
             self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
-            self.logging('2')
             ''' reset '''
             self.has_arrived = [0]*self.world_size
             self.tensor_collected_list = [0]*self.world_size
@@ -340,13 +336,17 @@ class Default_AggregationService(Service):
 
 
     def exposed_aggregate(self, rank, round_id, tensor_received):
-        # self.logging('receive rank %d, round_id %d' % (rank, round_id))
+        self.logging('receive rank %d, round_id %d' % (rank, round_id))
+        t1 = time.time()
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
+        t2 = time.time()
+        self.logging('rank %d obtain_time %.4f' % (rank, t2-t1))
         self.round_id = max(self.round_id, round_id)
 
         self.lock.acquire()
         self.has_arrived[rank] = 1
         if sum(self.has_arrived) == self.world_size:
+            self.logging('last_rank %d' % rank)
             self.lock.release()
             self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
             if round_id % (100//self.init_period) == 0:

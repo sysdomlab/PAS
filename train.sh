@@ -40,11 +40,11 @@ dataset="KWS"
 # dataset="Cifar10"
 
 ### interlayer type
-# interlayer_type="Default"
-interlayer_type="CAS"
+interlayer_type="Default"
+# interlayer_type="CAS"
 
 ### sync setting
-batchsize=100
+batchsize=64
 init_period=64
 dirichlet_alpha=0.1
 
