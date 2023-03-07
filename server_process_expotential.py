@@ -15,7 +15,7 @@ torch.set_printoptions(precision=4)
 CUDA = torch.cuda.is_available()
 
 CAS_hyperparams_profile = {
-    'ema_theta' : 0.97,
+    'ema_theta' : 0.9,
     'observe_window_size' : 5
 }
 
