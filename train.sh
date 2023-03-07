@@ -44,7 +44,7 @@ interlayer_type="CAS"
 
 ### sync setting
 batchsize=100
-init_period=64
+init_period=100
 dirichlet_alpha=0.1
 
 ### --- launch server process

@@ -102,7 +102,7 @@ class CAS_Interlayer():
         if (self.round_id - self.last_update_round) == (self.init_period//self.global_period):
             self.connection.root.sync_and_update(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
             if CUDA else self.connection.root.sync_and_update(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
-            self.last_updateround = self.round_id
+            self.last_update_round = self.round_id
         else:
             self.connection.root.sync(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
             if CUDA else self.connection.root.sync(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
