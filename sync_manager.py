@@ -237,7 +237,7 @@ class Sync_Manager():
             t2 = time.time()
             tensor_received = rpyc.classic.obtain(tensor_received).cuda() if CUDA else rpyc.classic.obtain(tensor_received)
             t3 = time.time()
-            self.logging('sync_time: %.4f, obtain_time: %.4f' % (t3-t2,t2-t1))
+            self.logging('sync_time: %.4f, obtain_time: %.4f' % (t3-t1,t3-t2))
             self.transmit_interlayer.restore_model_from_tensor_received(tensor_received)
             return True
         return False
