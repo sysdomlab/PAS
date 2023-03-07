@@ -22,7 +22,7 @@ class CAS_Interlayer():
         self.tune_cell = int(init_period//5)
         self.last_round_iter = 0
         self.sync_params_volume = 0
-        self.last_update_iter = 0
+        self.last_update_round = 0
 
         self.tensor_of_flattened_params = None
         self.freezing_tensor_of_flattened_params = None
@@ -45,7 +45,7 @@ class CAS_Interlayer():
                     else torch.zeros(self.flattened_params_length, dtype=torch.bool)
         self.freezing_mask = copy.deepcopy(self.mask)
 
-        self.period_list = [64, 32, 16, 8, 4]
+        self.period_list = [100, 50, 25, 12, 6]
         self.logging('-- Expotential CAS ')
 
 
@@ -99,10 +99,10 @@ class CAS_Interlayer():
         self.freezing_tensor_of_flattened_params[self.mask] = self.tensor_of_flattened_params[self.mask]
         self.freezing_mask += self.mask
         t1 = time.time()
-        if iter_id % self.init_period == 0:
+        if (self.round_id - self.last_update_round) == (self.init_period//self.global_period):
             self.connection.root.sync_and_update(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
             if CUDA else self.connection.root.sync_and_update(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
-            self.last_update_iter = iter_id
+            self.last_updateround = self.round_id
         else:
             self.connection.root.sync(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
             if CUDA else self.connection.root.sync(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
@@ -172,7 +172,7 @@ class CAS_Manager():
         t2 = time.time()
         self.logging('generate_time: %.4f' % (t2-t1))
         self.sync_round_id += 1
-        if iter_id % self.init_period == 0:
+        if (self.sync_round_id-self.transmit_interlayer.last_update_round) == (self.init_period//self.transmit_interlayer.global_period):
             t1 = time.time()
             self.transmit_interlayer.update_period()
             t2 = time.time()
