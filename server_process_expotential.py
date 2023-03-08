@@ -128,7 +128,7 @@ class CAS_AggregationService(Service):
         return self.averaged_tensor
 
     def exposed_aggregate_and_update(self, rank, round_id, tensor_received, temp_period):
-        # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
         self.lock.acquire()
         if self.first_has_arrived == 0:
@@ -189,7 +189,7 @@ class CAS_AggregationService(Service):
 
         self.grad_consistency = abs(self.ema_positive_grad-self.ema_negative_grad) / (self.ema_positive_grad+self.ema_negative_grad)
         self.tune_mask = ((self.grad_consistency > self.min_grad_consistency) \
-                            & (self.grad_consistency < 0.1) & (self.param_sync_period > 4) \
+                            & (self.grad_consistency < 0.99) & (self.param_sync_period > 6) \
                             & (self.round_id > self.window_start_round + self.observe_window_size))
         self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency)
 
@@ -220,7 +220,7 @@ class CAS_AggregationService(Service):
                 proportion = temp_len/self.flattened_params_length
                 proportion_list.append(round(proportion*100,3))
                 grad_consistency = self.grad_consistency[mask].sum() / temp_len
-                if temp_period == self.global_period and proportion < 0.01: 
+                if temp_period == self.global_period and proportion < 0.99: 
                     tune = torch.tensor([[1]])
             else:
                 if temp_period == self.global_period:
