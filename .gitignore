@@ -7,5 +7,5 @@ test*
 net*
 local_train*
 Dataset*
-*.t7
+
 
