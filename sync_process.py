@@ -81,6 +81,7 @@ class Sync_Service(Service):
         rpyc_config['allow_pickle'] = True
         global connection 
         connection = rpyc.connect(server_ip, server_port, config=rpyc_config)
+        connection._config['sync_request_timeout']=120
 
     def logging(self, string):
         print('['+str(datetime.datetime.now())+'] [Sync Process] '+str(string))

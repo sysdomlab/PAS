@@ -5,7 +5,7 @@ home=$HOME'/CASP-code'
 ### prepare master and workers
 # server='localhost'
 server='16.162.205.1'
-clients='16.162.55.42 18.163.8.28 43.198.75.124 18.166.67.79 18.166.58.104 18.162.225.50 43.198.75.203 18.163.115.32 18.163.185.130 18.163.73.40 18.166.57.113 18.166.67.234 16.162.55.172 18.163.103.45 18.163.129.100 18.162.125.60 18.166.53.177 18.167.116.162 16.162.44.164 18.162.225.253'
+clients='18.166.67.81 18.166.53.234 18.162.214.77 18.166.58.223 16.163.126.159 16.163.103.144 16.163.55.148 43.198.78.224 18.167.96.106 18.163.123.17 18.163.77.138 43.198.71.113 18.166.51.241 18.166.55.213 18.167.121.232 18.167.85.67 18.166.55.177 43.198.76.107 18.163.8.239 18.163.35.255'
 # clients='localhost localhost'
 
 echo 'Server_host: '$server
@@ -29,9 +29,9 @@ rm -rf Latest_Log && ln -s $log_dir Latest_Log
 echo 'logs in '$log_dir
 
 ### model
-# model="ResNet18_Cifar10"
+model="ResNet20_Cifar10"
 # model="MobileNetV2_Cifar10"
-model="LSTM_KWS"
+# model="LSTM_KWS"
 # model="CNN_Cifar10"
 
 ### dateset
@@ -39,8 +39,8 @@ dataset="KWS"
 # dataset="Cifar10"
 
 ### interlayer type
-# interlayer_type="Default"
-interlayer_type="CAS"
+interlayer_type="Default"
+# interlayer_type="CAS"
 
 ### sync setting
 batchsize=100
@@ -71,6 +71,7 @@ if [ "$interlayer_type" = "CAS" ]; then
         echo $command
         nohup ssh $i $command >> $log_dir/client_process_$num.log 2>&1 &
         num=$((num+1))
+        sleep 0.2
     done
     sleep 1
     ### --- launch client process
@@ -86,6 +87,7 @@ if [ "$interlayer_type" = "CAS" ]; then
         echo $command
         nohup ssh $i $command >> $log_dir/client_process_$num.log 2>&1 &
         num=$((num+1))
+        sleep 0.2
     done
 else 
     ### --- launch client process
@@ -101,6 +103,7 @@ else
         echo $command
         nohup ssh $i $command >> $log_dir/client_process_$num.log 2>&1 &
         num=$((num+1))
+        sleep 0.2
     done
 fi
 

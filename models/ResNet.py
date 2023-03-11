@@ -113,7 +113,7 @@ class ResNet4Cifar(nn.Module):
         output = self.fc(output)
         return output
 
-def resnet20(num_classes=10, **kargs):
+def ResNet20_Cifar10(num_classes=10, **kargs):
     """ return a ResNet 20 object
     """
     return ResNet4Cifar(ResidualBlock, [3, 3, 3], num_classes=num_classes)
@@ -124,7 +124,7 @@ def ResNet18_Cifar10():
     # return ptcv_get_model("resnet20_cifar10")
 
 if __name__ == '__main__':
-    model = resnet20().cuda()
+    model = ResNet20_Cifar10()
     torchsummary.summary(model,(3,32,32))
     input = torch.ones([1,3,32,32]).cuda()
     output = model(input)

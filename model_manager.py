@@ -24,6 +24,8 @@ ModelHyperparameterDict = {
             {'lr':0.01, 'wd':0.01, 'optimizer': torch.optim.SGD, 'loss_func': torch.nn.CrossEntropyLoss()},
         'ResNet18_Cifar10':
             {'lr':0.1, 'wd':0.001, 'optimizer': torch.optim.SGD, 'loss_func': torch.nn.CrossEntropyLoss()},
+        'ResNet20_Cifar10':
+            {'lr':0.1, 'wd':0.001, 'optimizer': torch.optim.SGD, 'loss_func': torch.nn.CrossEntropyLoss()},
         'VGG16_Cifar10':
             {'lr':0.1, 'wd':0.0001, 'optimizer': torch.optim.SGD, 'loss_func': torch.nn.CrossEntropyLoss()},
         'AlexNet_Cifar10':
@@ -92,6 +94,8 @@ class Model_Manager():
             self.model = LSTM.LSTM_KWS()
         if self.model_name == 'ResNet18_Cifar10':
             self.model = ResNet.ResNet18_Cifar10()
+        if self.model_name == 'ResNet20_Cifar10':
+            self.model = ResNet.ResNet20_Cifar10()
         if self.model_name == 'VGG16_Cifar10':
             self.model = VGG.VGG16_Cifar10()
         if self.model_name == 'AlexNet_Cifar10':

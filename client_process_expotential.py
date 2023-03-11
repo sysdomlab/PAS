@@ -92,7 +92,6 @@ class CAS_Interlayer():
         if length == 0: return 0
 
         self.sync_params_volume += length/1000000
-        if round_iter == self.init_period: self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (self.iter_id, self.round_id, self.sync_params_volume))
         for param in self.model.parameters():
             flattened_param = param.data.view(-1)
             self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flattened_param), 0)
@@ -100,6 +99,7 @@ class CAS_Interlayer():
         self.freezing_mask += self.mask
         t1 = time.time()
         if round_iter == self.global_period and (self.round_id - self.last_update_round) == (self.init_period//self.global_period):
+            self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (self.iter_id, self.round_id, self.sync_params_volume))
             self.connection.root.sync_and_update(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
             if CUDA else self.connection.root.sync_and_update(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
         else:
