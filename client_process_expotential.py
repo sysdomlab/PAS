@@ -34,6 +34,7 @@ class CAS_Interlayer():
         rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG
         rpyc_config['allow_pickle'] = True
         self.connection = rpyc.connect('localhost', sync_process_port, config=rpyc_config)
+        self.connection._config['sync_request_timeout']=120
         # self.sync_fun = rpyc.async_(self.connection.root.sync)
 
         ''' init model '''
