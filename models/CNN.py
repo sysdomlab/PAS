@@ -4,7 +4,7 @@ import torch.nn.functional as F
 class CNN_Mnist(nn.Module):
 
     def __init__(self):
-        super(CNN_Cifar10, self).__init__()
+        super(CNN_Mnist, self).__init__()
         self.conv1 = nn.Conv2d(1, 6, 5, 1, 2)
         self.pool = nn.MaxPool2d(2, 2)
         self.conv2 = nn.Conv2d(6, 16, 5)
