@@ -120,7 +120,7 @@ def ResNet20_Cifar10(num_classes=10, **kargs):
 
 
 def ResNet18_Cifar10():
-    return ResNet4Cifar(ResidualBlock, [3, 3, 3], num_classes=10)
+    return ResNet(ResidualBlock, num_classes=10)
     # return ptcv_get_model("resnet20_cifar10")
 
 if __name__ == '__main__':

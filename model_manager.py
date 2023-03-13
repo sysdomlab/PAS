@@ -28,6 +28,8 @@ ModelHyperparameterDict = {
             {'lr':0.1, 'wd':0.001, 'optimizer': torch.optim.SGD, 'loss_func': torch.nn.CrossEntropyLoss()},
         'VGG16_Cifar10':
             {'lr':0.1, 'wd':0.0001, 'optimizer': torch.optim.SGD, 'loss_func': torch.nn.CrossEntropyLoss()},
+        'VGG11_Cifar10':
+            {'lr':0.1, 'wd':0.0001, 'optimizer': torch.optim.SGD, 'loss_func': torch.nn.CrossEntropyLoss()},
         'AlexNet_Cifar10':
             {'lr':0.1, 'wd':0.001, 'optimizer': torch.optim.SGD, 'loss_func': torch.nn.CrossEntropyLoss()},
         'AlexNet_ImageNet':
@@ -98,6 +100,8 @@ class Model_Manager():
             self.model = ResNet.ResNet20_Cifar10()
         if self.model_name == 'VGG16_Cifar10':
             self.model = VGG.VGG16_Cifar10()
+        if self.model_name == 'VGG11_Cifar10':
+            self.model = VGG.VGG11_CIFAR10()
         if self.model_name == 'AlexNet_Cifar10':
             self.model = AlexNet.AlexNet_Cifar10() 
         if self.model_name == 'AlexNet_ImageNet':
