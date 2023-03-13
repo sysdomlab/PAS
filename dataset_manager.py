@@ -137,7 +137,7 @@ class Dataset_Manager():
     def get_index_partition(self):
         labels = np.array(self.training_dataset.targets) #pytorch老版本train_labels，新版本targets
         idxs = np.argsort(labels)
-        if self.world_size >= 10:
+        if self.world_size >= 10 and self.class_num == 10:
             l = [i for i in range(2*self.world_size)]
             single_class_parts = 2*self.world_size/self.class_num
             random.shuffle(l)

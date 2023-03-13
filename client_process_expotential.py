@@ -46,7 +46,7 @@ class CAS_Interlayer():
                     else torch.zeros(self.flattened_params_length, dtype=torch.bool)
         self.freezing_mask = copy.deepcopy(self.mask)
 
-        self.period_list = [100, 50, 25, 12, 6]
+        self.period_list = [self.init_period, self.init_period//2, self.init_period//4, self.init_period//8, self.init_period//16]
         self.logging('-- Expotential CAS ')
 
 

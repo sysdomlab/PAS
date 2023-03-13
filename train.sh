@@ -5,7 +5,7 @@ home=$HOME'/CASP-code'
 ### prepare master and workers
 # server='localhost'
 server='16.162.205.1'
-clients='16.162.91.136 16.163.56.175 18.163.102.176 16.163.58.212 18.163.115.244 18.167.96.212 18.163.123.97 18.166.72.149 18.162.245.130 18.167.94.162 18.166.65.116 18.167.84.185 18.162.62.94 43.198.72.223 43.198.77.39 18.167.121.223 18.163.123.149 18.167.121.144 18.162.126.139 18.162.114.30'
+clients='18.166.56.96 18.163.121.196 18.163.129.10 43.198.25.89 18.163.117.175 18.163.181.66 18.167.120.50 18.163.77.224 18.163.115.91 43.198.74.77 18.167.72.190 16.163.108.138 18.166.74.65 16.162.44.67 16.162.48.158 18.167.116.245 43.198.77.182 16.163.57.59 18.163.123.184 18.163.190.232'
 # clients='localhost localhost'
 
 echo 'Server_host: '$server
@@ -30,23 +30,26 @@ echo 'logs in '$log_dir
 
 ### model
 # model="ResNet20_Cifar10"
+# model="ResNet18_Cifar10"
 # model="MobileNetV2_Cifar10"
 # model="LSTM_KWS"
 # model="CNN_Cifar10"
-model="CNN_Mnist"
+# model="VGG11_Cifar10"
+# model="CNN_Mnist"
+model="CNN_EMnist"
 
 ### dateset
 # dataset="KWS"
 # dataset="Cifar10"
-dataset="Mnist"
+dataset="EMnist"
 
 ### interlayer type
-interlayer_type="Default"
-# interlayer_type="CAS"
+# interlayer_type="Default"
+interlayer_type="CAS"
 
 ### sync setting
 batchsize=100
-init_period=100
+init_period=200
 dirichlet_alpha=0.1
 
 ### --- launch server process

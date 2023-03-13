@@ -35,6 +35,9 @@ class CAS_AggregationService(Service):
         self.round_id = 0
         self.initial_period = init_period
         self.global_period = init_period
+        self.last_global_proportion = 1
+        self.last_global_proportion_stable_round = 0
+        self.global_window_size = CAS_hyperparams_profile['observe_window_size']*2
 
         self.param_sync_period = None
         self.last_tensor_received = None
@@ -195,7 +198,7 @@ class CAS_AggregationService(Service):
 
         self.grad_consistency = abs(self.ema_positive_grad-self.ema_negative_grad) / (self.ema_positive_grad+self.ema_negative_grad)
         self.tune_mask = ((self.grad_consistency > self.min_grad_consistency) \
-                            & (self.grad_consistency < 0.1) & (self.param_sync_period > 6) \
+                            & (self.grad_consistency < 0.1) & (self.param_sync_period > self.initial_period//16) \
                             & (self.round_id > self.window_start_round + self.observe_window_size))
         self.temp_mask2 = (self.grad_consistency <= self.min_grad_consistency)
 
@@ -218,7 +221,7 @@ class CAS_AggregationService(Service):
         proportion_list = []
         grad_consistency_list = []
         tune = torch.tensor([[0]])
-        while temp_period >= 1:
+        while temp_period >= self.initial_period//16:
             mask = (self.param_sync_period == temp_period)
             index = mask.nonzero()
             temp_len = len(index)
@@ -226,8 +229,13 @@ class CAS_AggregationService(Service):
                 proportion = temp_len/self.flattened_params_length
                 proportion_list.append(round(proportion*100,3))
                 grad_consistency = self.grad_consistency[mask].sum() / temp_len
-                if temp_period == self.global_period and proportion < 0.01: 
-                    tune = torch.tensor([[1]])
+                if temp_period == self.global_period:
+                    if proportion != self.last_global_proportion:
+                        self.last_global_proportion = proportion
+                        self.last_global_proportion_stable_round = 0
+                    else: self.last_global_proportion_stable_round += 1
+                    if proportion < 0.01 or (proportion < 0.5 and self.last_global_proportion_stable_round > self.global_window_size): 
+                        tune = torch.tensor([[1]])
             else:
                 if temp_period == self.global_period:
                     tune = torch.tensor([[1]])
@@ -250,7 +258,8 @@ class CAS_AggregationService(Service):
             self.ema_positive_grad[mask] = 0
             self.ema_negative_grad[mask] = 0
             self.min_grad_consistency[mask] = 1
-            # self.window_start_round[mask] = self.round_id
+            self.last_global_proportion = 1
+            self.last_global_proportion_stable_round = 0
         
         return tune
 
