@@ -5,7 +5,7 @@ home=$HOME'/CASP-code'
 ### prepare master and workers
 # server='localhost'
 server='16.162.205.1'
-clients='18.166.67.81 18.167.84.47 18.162.214.77 18.163.123.57 16.163.126.159 16.163.103.144 16.163.55.148 43.198.78.224 43.198.78.62 18.163.123.17 18.163.77.138 43.198.74.216 18.163.189.65 18.166.67.79 18.167.121.232 18.167.85.67 18.166.55.177 43.198.76.107 18.166.53.92 18.163.35.255'
+clients='16.162.91.136 16.163.56.175 18.163.102.176 16.163.58.212 18.163.115.244 18.167.96.212 18.163.123.97 18.166.72.149 18.162.245.130 18.167.94.162 18.166.65.116 18.167.84.185 18.162.62.94 43.198.72.223 43.198.77.39 18.167.121.223 18.163.123.149 18.167.121.144 18.162.126.139 18.162.114.30'
 # clients='localhost localhost'
 
 echo 'Server_host: '$server
@@ -29,18 +29,20 @@ rm -rf Latest_Log && ln -s $log_dir Latest_Log
 echo 'logs in '$log_dir
 
 ### model
-model="ResNet20_Cifar10"
+# model="ResNet20_Cifar10"
 # model="MobileNetV2_Cifar10"
 # model="LSTM_KWS"
 # model="CNN_Cifar10"
+model="CNN_Mnist"
 
 ### dateset
 # dataset="KWS"
-dataset="Cifar10"
+# dataset="Cifar10"
+dataset="Mnist"
 
 ### interlayer type
-# interlayer_type="Default"
-interlayer_type="CAS"
+interlayer_type="Default"
+# interlayer_type="CAS"
 
 ### sync setting
 batchsize=100
