@@ -6,8 +6,8 @@ clients='18.166.56.96 18.163.121.196 18.163.129.10 43.198.25.89 18.163.117.175 1
 log_dir=$home/Logs/bandwidth_limit
 mkdir -p $log_dir
 
-up_bandwidth=1024
-down_bandwidth=1024
+up_bandwidth=5120
+down_bandwidth=5120
 num=0
 for i in $clients; do
     command="sudo $HOME/wondershaper/wondershaper -a ens5 -u $up_bandwidth -d $down_bandwidth && speedtest"
