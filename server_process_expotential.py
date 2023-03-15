@@ -148,7 +148,7 @@ class CAS_AggregationService(Service):
                 self.averaged_client_num = 0
                 self.lock.release()
 
-                self.logging('finishing round %d' % round_id)
+                self.logging('finishing temp period %d' % temp_period)
             else:
                 self.lock.release()
         
@@ -343,6 +343,7 @@ class Default_AggregationService(Service):
             ''' reset '''
             self.has_arrived_num = 0
             self.first_has_arrived = 0
+            self.logging('finishing round 0')
         self.lock.release()
 
         while self.has_arrived_num != 0:

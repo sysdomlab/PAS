@@ -137,7 +137,7 @@ class Dataset_Manager():
                 composition[i] -= (class_pool_size-class_accumulate[i])
                 class_accumulate[i] = 0
             client_class_index = np.concatenate((client_class_index, sorted_idxs[class_pool_size*i:class_pool_size*i+composition[i]]),axis=0)
-            self.logging(len(client_class_index))
+            # self.logging(len(client_class_index))
             local_idxs = np.concatenate((local_idxs, client_class_index), axis = 0)
             local_idxs = local_idxs.astype(int)
         return local_idxs

@@ -3,10 +3,10 @@
 home=$HOME'/CASP-code'
 
 ### prepare master and workers
-server='localhost'
-# server='16.162.205.1'
-# clients='18.166.56.96 18.163.121.196 18.163.129.10 43.198.25.89 18.163.117.175 18.163.181.66 18.167.120.50 18.163.77.224 18.163.115.91 43.198.74.77 18.167.72.190 16.163.108.138 18.166.74.65 16.162.44.67 16.162.48.158 18.167.116.245 43.198.77.182 16.163.57.59 18.163.123.184 18.163.190.232'
-clients='localhost localhost localhost localhost'
+# server='localhost'
+server='16.162.205.1'
+clients='18.166.67.56 16.163.58.32 18.166.65.15 18.167.96.144 18.166.77.173 18.167.109.117 16.163.56.102 18.166.67.59 18.166.70.7 18.162.126.68 18.163.5.183 18.166.67.217 16.163.109.65 18.162.116.225 43.198.77.24 18.167.102.181 18.162.143.142 18.163.181.40 18.167.116.234 18.163.105.192'
+# clients='localhost localhost localhost localhost'
 
 echo 'Server_host: '$server
 echo 'Client_hosts: '$clients
@@ -44,12 +44,12 @@ model="CNN_EMnist"
 dataset="EMnist"
 
 ### interlayer type
-# interlayer_type="Default"
-interlayer_type="CAS"
+interlayer_type="Default"
+# interlayer_type="CAS"
 
 ### sync setting
 batchsize=100
-init_period=100
+init_period=200
 dirichlet_alpha=0.1
 
 ### --- launch server process

@@ -83,10 +83,10 @@ class CAS_Interlayer():
         if round_iter == 1: 
             self.freezing_mask.fill_(0)
             self.round_id += 1
-        if len(self.freezing_mask.nonzero()) != 0:
-            self.freezing()
         if round_iter not in self.period_list:
             return 0
+        if len(self.freezing_mask.nonzero()) != 0:
+            self.freezing()
         self.tensor_of_flattened_params = torch.tensor([]).cuda() if CUDA else torch.tensor([])
         self.mask = (self.param_sync_period == round_iter).cuda() if CUDA else (self.param_sync_period == round_iter)
         length = len(self.mask.nonzero())
