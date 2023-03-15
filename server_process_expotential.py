@@ -16,8 +16,9 @@ CUDA = torch.cuda.is_available()
 
 CAS_hyperparams_profile = {
     'ema_theta' : 0.9,
-    'observe_window_size' : 5
+    'observe_window_size' : 5,
 }
+reporting_fraction = 0.4
 
 test_lock = Lock()
 model = None
@@ -38,6 +39,8 @@ class CAS_AggregationService(Service):
         self.last_global_proportion = 1
         self.last_global_proportion_stable_round = 0
         self.global_window_size = CAS_hyperparams_profile['observe_window_size']*2
+        self.reporting_fraction = reporting_fraction
+        self.received_size = int(self.world_size*self.reporting_fraction)
 
         self.param_sync_period = None
         self.last_tensor_received = None
@@ -53,8 +56,8 @@ class CAS_AggregationService(Service):
         self.observe_window_size = None
         
         self.first_has_arrived = 0
-        self.has_arrived = [0] * world_size
-        self.tensor_collected_list = [0] * world_size
+        self.has_arrived_num = 0
+        self.averaged_client_num = 0
         print('- CAS Hyperparams Profile: ')
         pprint.pprint(CAS_hyperparams_profile)
         sys.stdout.flush()
@@ -64,12 +67,12 @@ class CAS_AggregationService(Service):
         sys.stdout.flush()
 
     def exposed_sync_initial_model(self, rank, tensor_received):
-        # self.logging('receive rank %d, round_id 0' % rank)
-        self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
+        tensor_received = rpyc.classic.obtain(tensor_received)
+        self.logging('receive rank %d, round_id 0' % rank)
         self.lock.acquire()
         if self.first_has_arrived == 0:
             self.first_has_arrived = 1
-            self.flattened_params_length = len(self.tensor_collected_list[rank])
+            self.flattened_params_length = len(tensor_received)
 
             self.grad_consistency = torch.full([self.flattened_params_length], 1, dtype=torch.float32)
             self.min_grad_consistency = torch.full([self.flattened_params_length], 1, dtype=torch.float32)
@@ -78,56 +81,78 @@ class CAS_AggregationService(Service):
             self.ema_negative_grad = torch.zeros(self.flattened_params_length)
             self.param_sync_period = torch.full([self.flattened_params_length], self.initial_period, dtype=torch.int32)
             self.observe_window_size = torch.full([self.flattened_params_length], CAS_hyperparams_profile['observe_window_size'], dtype=torch.int32)
+            self.averaged_tensor = torch.zeros(self.flattened_params_length, dtype=torch.float32)
+        self.averaged_tensor += tensor_received/self.world_size
 
-        self.has_arrived[rank] = 1
-        if sum(self.has_arrived) == self.world_size:
-            self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
+        self.has_arrived_num += 1
+        if self.has_arrived_num == self.world_size:
             self.last_tensor_received = copy.deepcopy(self.averaged_tensor)
+
             ''' reset '''
-            self.has_arrived = [0]*self.world_size
-            self.tensor_collected_list = [0]*self.world_size
+            self.has_arrived_num = 0
             self.first_has_arrived = 0
             self.logging('finishing round 0')
         self.lock.release()
 
-        while self.has_arrived[rank] == 1:
+        while self.has_arrived_num != 0:
             time.sleep(0.01)
 
         # self.logging('return rank %d, round_id 0' % rank)
         return self.averaged_tensor
 
     def exposed_aggregate(self, rank, round_id, tensor_received, temp_period):
-        # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
-        # t1 = time.time()
-        self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
-        # t2 = time.time()
-        # self.logging('rank %d ontain_time %.4f' % (rank, t2-t1))
         self.lock.acquire()
-        if self.first_has_arrived == 0:
-            self.mask = (self.param_sync_period == temp_period)
-            received_length = len(self.tensor_collected_list[rank])
-            self.positive_grad = torch.zeros(received_length)
-            self.negative_grad = torch.zeros(received_length)
-            self.first_has_arrived = 1
-            self.round_id = round_id
-
-        self.has_arrived[rank] = 1
-        if sum(self.has_arrived) == self.world_size:
-            self.lock.release()
-            self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
-            self.pooling_and_smoothing()
-    
-            self.last_tensor_received[self.mask] = self.averaged_tensor
-
-            ''' reset '''
-            self.has_arrived = [0] * self.world_size
-            self.tensor_collected_list = [0] * self.world_size
-            self.first_has_arrived = 0
-            # self.logging('finishing round %d' % round_id)
+        self.has_arrived_num += 1
+        if self.has_arrived_num <= self.received_size:
+            tag = 0
         else:
-            self.lock.release()
+            tag = 1
+        self.lock.release()
+
+        if tag == 0:
+            t1 = time.time()
+            received_tensor = rpyc.classic.obtain(tensor_received)
+            t2 = time.time()
+            self.logging('rank %d, obtain time %.4f' % (rank, t2-t1))
+            self.lock.acquire()
+            if self.first_has_arrived == 0:
+                self.mask = (self.param_sync_period == temp_period)
+                received_length = len(received_tensor)
+                self.positive_grad = torch.zeros(received_length)
+                self.negative_grad = torch.zeros(received_length)
+                self.averaged_tensor = torch.zeros(received_length)
+                self.round_id = round_id
+                self.first_has_arrived = 1
+            # self.lock.release()
+            self.averaged_tensor += received_tensor/self.received_size
+            ''' pooling '''
+            grad_tensor = received_tensor - self.last_tensor_received[self.mask]
+            self.positive_grad += torch.where(grad_tensor > 0, grad_tensor, 0)
+            self.negative_grad -= torch.where(grad_tensor <= 0, grad_tensor, 0)
+
+            self.averaged_client_num += 1
+            if self.averaged_client_num == self.received_size:
+                self.lock.release()
+                ''' smoothing '''
+                self.ema_positive_grad[self.mask] = self.eam_theta*self.ema_positive_grad[self.mask] + (1-self.eam_theta)*self.positive_grad
+                self.ema_negative_grad[self.mask] = self.eam_theta*self.ema_negative_grad[self.mask] + (1-self.eam_theta)*self.negative_grad
+
+                self.last_tensor_received[self.mask] = self.averaged_tensor
+                while self.has_arrived_num != self.world_size:
+                    time.sleep(0.01)
+
+                ''' reset '''
+                self.lock.acquire()
+                self.has_arrived_num = 0
+                self.first_has_arrived = 0
+                self.averaged_client_num = 0
+                self.lock.release()
+
+                self.logging('finishing round %d' % round_id)
+            else:
+                self.lock.release()
         
-        while self.has_arrived[rank] == 1:
+        while self.has_arrived_num != 0:
             time.sleep(0.01)
         
         # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
@@ -135,49 +160,71 @@ class CAS_AggregationService(Service):
 
     def exposed_aggregate_and_update(self, rank, round_id, tensor_received, temp_period):
         # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
-        t1 = time.time()
-        self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
-        t2 = time.time()
-        self.logging('rank %d ontain_time %.4f' % (rank, t2-t1))
         self.lock.acquire()
-        if self.first_has_arrived == 0:
-            self.mask = (self.param_sync_period == temp_period)
-            received_length = len(self.tensor_collected_list[rank])
-            self.positive_grad = torch.zeros(received_length)
-            self.negative_grad = torch.zeros(received_length)
-            self.first_has_arrived = 1
-            self.round_id = round_id
-
-
-        self.has_arrived[rank] = 1
-        if sum(self.has_arrived) == self.world_size:
-            self.lock.release()
-            self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
-            self.pooling_and_smoothing()
-
-            
-            self.last_tensor_received[self.mask] = self.averaged_tensor
-            self.update_period()
-
-            ''' testing '''
-            t1 = time.time()
-            test_tensor = copy.deepcopy(self.last_tensor_received)
-            testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
-            testing_thread.start()
-            t2 = time.time()
-            self.logging("start_testing_thread: %.4f" % (t2-t1))
-
-            ''' reset '''
-            self.has_arrived = [0] * self.world_size
-            self.tensor_collected_list = [0] *self.world_size
-            self.first_has_arrived = 0
-            self.logging('finishing round %d' % round_id)
+        self.has_arrived_num += 1
+        if self.has_arrived_num <= self.received_size:
+            tag = 0
         else:
-            self.lock.release()
+            tag = 1
+        self.lock.release()
+
+        if tag == 0:
+            t1 = time.time()
+            received_tensor = rpyc.classic.obtain(tensor_received)
+            t2 = time.time()
+            self.logging('rank %d, obtain time %.4f' % (rank, t2-t1))
+            self.lock.acquire()
+            if self.first_has_arrived == 0:
+                self.mask = (self.param_sync_period == temp_period)
+                received_length = len(received_tensor)
+                self.positive_grad = torch.zeros(received_length)
+                self.negative_grad = torch.zeros(received_length)
+                self.averaged_tensor = torch.zeros(received_length)
+                self.round_id = round_id
+                self.first_has_arrived = 1
+            # self.lock.release()
+            self.averaged_tensor += received_tensor/self.received_size
+            ''' pooling '''
+            grad_tensor = received_tensor - self.last_tensor_received[self.mask]
+            self.positive_grad += torch.where(grad_tensor > 0, grad_tensor, 0)
+            self.negative_grad -= torch.where(grad_tensor <= 0, grad_tensor, 0)
+
+            self.averaged_client_num += 1
+            if self.averaged_client_num == self.received_size:
+                self.lock.release()
+                ''' smoothing '''
+                self.ema_positive_grad[self.mask] = self.eam_theta*self.ema_positive_grad[self.mask] + (1-self.eam_theta)*self.positive_grad
+                self.ema_negative_grad[self.mask] = self.eam_theta*self.ema_negative_grad[self.mask] + (1-self.eam_theta)*self.negative_grad
+
+                self.last_tensor_received[self.mask] = self.averaged_tensor
+                self.update_period()
+
+                ''' testing '''
+                t1 = time.time()
+                test_tensor = copy.deepcopy(self.last_tensor_received)
+                testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
+                testing_thread.start()
+                t2 = time.time()
+                self.logging("start_testing_thread: %.4f" % (t2-t1))
+
+                while self.has_arrived_num != self.world_size:
+                    time.sleep(0.01)
+
+                ''' reset '''
+                self.lock.acquire()
+                self.has_arrived_num = 0
+                self.first_has_arrived = 0
+                self.averaged_client_num = 0
+                self.lock.release()
+
+                self.logging('finishing round %d' % round_id)
+            else:
+                self.lock.release()
         
-        while self.has_arrived[rank] == 1:
+        while self.has_arrived_num != 0:
             time.sleep(0.01)
-        self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
+        
+        # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         return [self.averaged_tensor, self.global_tune_index]
         
 
@@ -269,36 +316,36 @@ class Default_AggregationService(Service):
         self.world_size = world_size
         self.round_id = 0
         self.flattened_params_length = 0
+        self.reporting_fraction = reporting_fraction
+        self.received_size = int(self.world_size*self.reporting_fraction)
         self.lock = Lock()
 
         self.averaged_tensor = None
-        self.has_arrived = [0] * world_size
-        self.tensor_collected_list = [0] * world_size
+        self.has_arrived_num = 0
         self.first_has_arrived = 0
+        self.averaged_client_num = 0
 
     def logging(self, string):
         print('['+str(datetime.datetime.now())+'] [Server] '+str(string))
         sys.stdout.flush()
 
     def exposed_sync_initial_model(self, rank, tensor_received):
-        # self.logging('receive rank %d, sync_initial_model' % (rank))
-        self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
+        tensor_received = rpyc.classic.obtain(tensor_received)
+        self.logging('receive rank %d, sync_initial_model' % (rank))
         self.lock.acquire()
         if self.first_has_arrived == 0:
             self.first_has_arrived = 1
             self.flattened_params_length = len(tensor_received)
-
-        self.has_arrived[rank] = 1
-        if sum(self.has_arrived) == self.world_size:
-            self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
+            self.averaged_tensor = torch.zeros(self.flattened_params_length)
+        self.has_arrived_num += 1
+        self.averaged_tensor += tensor_received/self.world_size
+        if self.has_arrived_num == self.world_size:
             ''' reset '''
-            self.has_arrived = [0]*self.world_size
-            self.tensor_collected_list = [0]*self.world_size
+            self.has_arrived_num = 0
             self.first_has_arrived = 0
-            self.logging('finishing round 0')
         self.lock.release()
 
-        while self.has_arrived[rank] == 1:
+        while self.has_arrived_num != 0:
             time.sleep(0.01)
         
         return self.averaged_tensor
@@ -306,36 +353,53 @@ class Default_AggregationService(Service):
 
     def exposed_aggregate(self, rank, round_id, tensor_received):
         # self.logging('receive rank %d, round_id %d' % (rank, round_id))
-        t1 = time.time()
-        self.tensor_collected_list[rank] = rpyc.classic.obtain(tensor_received)
-        t2 = time.time()
-        self.logging('rank %d, obtain time %.4f' % (rank, t2-t1))
-        self.round_id = max(self.round_id, round_id)
-
         self.lock.acquire()
-        self.has_arrived[rank] = 1
-        if sum(self.has_arrived) == self.world_size:
-            self.averaged_tensor = sum(self.tensor_collected_list)/self.world_size
-
-            ''' testing '''
-            t1 = time.time()
-            test_tensor = copy.deepcopy(self.averaged_tensor)
-            testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
-            testing_thread.start()
-            t2 = time.time()
-            self.logging("start_testing_thread: %.4f" % (t2-t1))
-
-            ''' reset '''
-            self.has_arrived = [0] * self.world_size
-            self.tensor_collected_list = [0] * self.world_size
-            self.first_has_arrived = 0
-
-            self.logging('finishing round %d' % round_id)
+        if self.first_has_arrived == 0:
+            self.averaged_tensor = torch.zeros(self.flattened_params_length)
+            self.round_id = max(self.round_id, round_id)
+            self.first_has_arrived = 1
+        self.has_arrived_num += 1
+        if self.has_arrived_num <= self.received_size:
+            tag = 0
+        else:
+            tag = 1
         self.lock.release()
+
+        if tag == 0:
+            t1 = time.time()
+            received_tensor = rpyc.classic.obtain(tensor_received)
+            t2 = time.time()
+            self.logging('rank %d, obtain time %.4f' % (rank, t2-t1))
+            self.averaged_tensor = received_tensor/self.world_size
+
+            self.lock.acquire()
+            self.averaged_client_num += 1
+            if self.averaged_client_num == self.received_size:
+                ''' testing '''
+                t1 = time.time()
+                test_tensor = copy.deepcopy(self.averaged_tensor)
+                testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
+                testing_thread.start()
+                t2 = time.time()
+                self.logging("start_testing_thread: %.4f" % (t2-t1))
+                
+                self.lock.release()
+                while self.has_arrived_num != self.world_size:
+                    time.sleep(0.01)
+                self.lock.acquire()
+                ''' reset '''
+                self.has_arrived_num = 0
+                self.first_has_arrived = 0
+                self.averaged_client_num = 0
+                self.lock.release()
+
+                self.logging('finishing round %d' % round_id)
+            else:
+                self.lock.release()
 
 
         ''' otherwise, keep spining (blocked) '''
-        while self.has_arrived[rank] == 1:
+        while self.has_arrived_num != 0:
             time.sleep(0.01)
         # self.logging('return rank %d, round_id %d' % (rank, round_id))
         return self.averaged_tensor

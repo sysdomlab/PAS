@@ -107,52 +107,60 @@ class Dataset_Manager():
         torch.backends.cudnn.benchmark = False
 
 
-    # def get_dirichlet(self):
-    #     composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size)
-    #     # if self.partition_rank == 0:
-    #     #     self.logging(np.argmax(np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size),axis=1))
-    #     return (composition_ratio*self.local_size).astype(int)
-
-    # def get_index_partition(self):
-    #     local_idxs = np.array([])
-    #     self.set_seed(0)
-    #     labels = np.array(self.training_dataset.targets)
-    #     sorted_idxs = np.argsort(labels)
-    #     composition = self.get_dirichlet()
-    #     class_accumulate = np.sum(composition[:self.partition_rank], axis=0)
-    #     composition = composition[self.partition_rank]
-    #     self.logging(composition)
-    #     # print('local dataset composition: ' + str(composition))
-    #     class_pool_size = int(len(self.training_dataset) / self.class_num)
-    #     for i in range(self.class_num):
-    #         if class_accumulate[i]%class_pool_size <= (class_accumulate[i]+composition[i]) % class_pool_size:
-    #             client_class_index = sorted_idxs[class_pool_size*i+(class_accumulate[i])%class_pool_size:class_pool_size*i+(class_accumulate[i]+composition[i])%class_pool_size]
-    #         else:
-    #             client_class_index = np.concatenate((sorted_idxs[class_pool_size*i+class_accumulate[i]%class_pool_size:class_pool_size*(i+1)], \
-    #                                                  sorted_idxs[class_pool_size*i:class_pool_size*i+(class_accumulate[i]+composition[i])%class_pool_size]),axis=0)
-    #         local_idxs = np.concatenate((local_idxs, client_class_index), axis = 0)
-    #         local_idxs = local_idxs.astype(int)
-    #     return local_idxs
+    def get_dirichlet(self):
+        composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size)
+        # if self.partition_rank == 0:
+        #     self.logging(np.argmax(np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size),axis=1))
+        return (composition_ratio*self.local_size).astype(int)
 
     def get_index_partition(self):
-        labels = np.array(self.training_dataset.targets) #pytorch老版本train_labels，新版本targets
-        idxs = np.argsort(labels)
-        if self.world_size >= 10 and self.class_num == 10:
-            l = [i for i in range(2*self.world_size)]
-            single_class_parts = 2*self.world_size/self.class_num
-            random.shuffle(l)
-            if self.partition_rank == 0:
-                a = 0
-                for i in range(self.world_size):
-                    if l[2*i]/single_class_parts == l[2*i+1]/single_class_parts: a += 1
-                self.logging('bad_partition: %d' % a)
-            each_part_size = len(self.training_dataset) // (2 * self.world_size)
-            final_idxs = np.concatenate((idxs[each_part_size*l[2*self.partition_rank] : each_part_size*(l[2*self.partition_rank]+1)], \
-                                         idxs[each_part_size*l[2*self.partition_rank+1] : each_part_size*(l[2*self.partition_rank+1]+1)]), axis=0)
-            return final_idxs
-        else:
-            each_part_size = len(self.training_dataset) // self.world_size
-            return idxs[each_part_size*self.partition_rank : each_part_size*(self.partition_rank+1)]
+        local_idxs = np.array([]).astype(int)
+        self.set_seed(0)
+        labels = np.array(self.training_dataset.targets)
+        sorted_idxs = np.argsort(labels)
+        composition = self.get_dirichlet()
+        class_accumulate = np.sum(composition[:self.partition_rank], axis=0)
+        composition = composition[self.partition_rank]
+        self.logging(composition)
+        # print('local dataset composition: ' + str(composition))
+        class_pool_size = int(len(self.training_dataset) / self.class_num)
+        for i in range(self.class_num):
+            # if class_accumulate[i]%class_pool_size <= (class_accumulate[i]+composition[i]) % class_pool_size:
+            #     client_class_index = sorted_idxs[class_pool_size*i+(class_accumulate[i])%class_pool_size:class_pool_size*i+(class_accumulate[i]+composition[i])%class_pool_size]
+            # else:
+            #     client_class_index = np.concatenate((sorted_idxs[class_pool_size*i+class_accumulate[i]%class_pool_size:class_pool_size*(i+1)], \
+            #                                          sorted_idxs[class_pool_size*i:class_pool_size*i+(class_accumulate[i]+composition[i])%class_pool_size]),axis=0)
+            client_class_index = np.array([]).astype(int)
+            class_accumulate[i] = class_accumulate[i]%class_pool_size
+            while class_accumulate[i] + composition[i] > class_pool_size:
+                client_class_index = np.concatenate((client_class_index, sorted_idxs[class_pool_size*i+class_accumulate[i]:class_pool_size*(i+1)]),axis=0)
+                composition[i] -= (class_pool_size-class_accumulate[i])
+                class_accumulate[i] = 0
+            client_class_index = np.concatenate((client_class_index, sorted_idxs[class_pool_size*i:class_pool_size*i+composition[i]]),axis=0)
+            self.logging(len(client_class_index))
+            local_idxs = np.concatenate((local_idxs, client_class_index), axis = 0)
+            local_idxs = local_idxs.astype(int)
+        return local_idxs
+
+    # def get_index_partition(self):
+    #     labels = np.array(self.training_dataset.targets) #pytorch老版本train_labels，新版本targets
+    #     idxs = np.argsort(labels)
+    #     if self.world_size >= 10 and self.class_num == 10:
+    #         l = [i for i in range(2*self.world_size)]
+    #         single_class_parts = 2*self.world_size/self.class_num
+    #         random.shuffle(l)
+    #         if self.partition_rank == 0:
+    #             a = 0
+    #             for i in range(self.world_size):
+    #                 if l[2*i]/single_class_parts == l[2*i+1]/single_class_parts: a += 1
+    #             self.logging('bad_partition: %d' % a)
+    #         each_part_size = len(self.training_dataset) // (2 * self.world_size)
+    #         final_idxs = np.concatenate((idxs[each_part_size*l[2*self.partition_rank] : each_part_size*(l[2*self.partition_rank]+1)], \
+    #                                      idxs[each_part_size*l[2*self.partition_rank+1] : each_part_size*(l[2*self.partition_rank+1]+1)]), axis=0)
+    #         return final_idxs
+    #     else:
+    #         each_part_size = len(self.training_dataset) // self.world_size
+    #         return idxs[each_part_size*self.partition_rank : each_part_size*(self.partition_rank+1)]
 
 
     def get_training_dataloader(self):

@@ -7,7 +7,7 @@ log_dir=$home/Logs/bandwidth_limit
 mkdir -p $log_dir
 
 up_bandwidth=5120
-down_bandwidth=5120
+down_bandwidth=10240
 num=0
 for i in $clients; do
     command="sudo $HOME/wondershaper/wondershaper -a ens5 -u $up_bandwidth -d $down_bandwidth && speedtest"
