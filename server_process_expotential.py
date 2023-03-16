@@ -1,5 +1,5 @@
 import torch
-import sys, os, argparse, copy, numpy, pprint, datetime, time
+import sys, os, argparse, copy, numpy, pprint, datetime, time, random
 
 import rpyc
 from rpyc import Service
@@ -56,7 +56,7 @@ class CAS_AggregationService(Service):
         self.observe_window_size = None
         
         self.first_has_arrived = 0
-        self.has_arrived_num = 0
+        self.has_arrived = [0]*self.world_size
         self.averaged_client_num = 0
         print('- CAS Hyperparams Profile: ')
         pprint.pprint(CAS_hyperparams_profile)
@@ -84,17 +84,17 @@ class CAS_AggregationService(Service):
             self.averaged_tensor = torch.zeros(self.flattened_params_length, dtype=torch.float32)
         self.averaged_tensor += tensor_received/self.world_size
 
-        self.has_arrived_num += 1
-        if self.has_arrived_num == self.world_size:
+        self.has_arrived[rank] = 1
+        if sum(self.has_arrived) == self.world_size:
             self.last_tensor_received = copy.deepcopy(self.averaged_tensor)
 
             ''' reset '''
-            self.has_arrived_num = 0
+            self.has_arrived = [0]*self.world_size
             self.first_has_arrived = 0
             self.logging('finishing round 0')
         self.lock.release()
 
-        while self.has_arrived_num != 0:
+        while self.has_arrived[rank] == 1:
             time.sleep(0.01)
 
         # self.logging('return rank %d, round_id 0' % rank)
@@ -102,8 +102,8 @@ class CAS_AggregationService(Service):
 
     def exposed_aggregate(self, rank, round_id, tensor_received, temp_period):
         self.lock.acquire()
-        self.has_arrived_num += 1
-        if self.has_arrived_num <= self.received_size:
+        self.has_arrived[rank] = 1
+        if sum(self.has_arrived) <= self.received_size:
             tag = 0
         else:
             tag = 1
@@ -113,7 +113,7 @@ class CAS_AggregationService(Service):
             t1 = time.time()
             received_tensor = rpyc.classic.obtain(tensor_received)
             t2 = time.time()
-            self.logging('rank %d, obtain time %.4f' % (rank, t2-t1))
+            self.logging('rank %d, temp_period %d, obtain time %.4f' % (rank, temp_period, t2-t1))
             self.lock.acquire()
             if self.first_has_arrived == 0:
                 self.mask = (self.param_sync_period == temp_period)
@@ -138,12 +138,12 @@ class CAS_AggregationService(Service):
                 self.ema_negative_grad[self.mask] = self.eam_theta*self.ema_negative_grad[self.mask] + (1-self.eam_theta)*self.negative_grad
 
                 self.last_tensor_received[self.mask] = self.averaged_tensor
-                while self.has_arrived_num != self.world_size:
+                while sum(self.has_arrived) != self.world_size:
                     time.sleep(0.01)
 
                 ''' reset '''
                 self.lock.acquire()
-                self.has_arrived_num = 0
+                self.has_arrived = [0]*self.world_size
                 self.first_has_arrived = 0
                 self.averaged_client_num = 0
                 self.lock.release()
@@ -152,7 +152,7 @@ class CAS_AggregationService(Service):
             else:
                 self.lock.release()
         
-        while self.has_arrived_num != 0:
+        while self.has_arrived[rank] == 1:
             time.sleep(0.01)
         
         # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
@@ -161,8 +161,8 @@ class CAS_AggregationService(Service):
     def exposed_aggregate_and_update(self, rank, round_id, tensor_received, temp_period):
         # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         self.lock.acquire()
-        self.has_arrived_num += 1
-        if self.has_arrived_num <= self.received_size:
+        self.has_arrived[rank] = 1
+        if sum(self.has_arrived) <= self.received_size:
             tag = 0
         else:
             tag = 1
@@ -207,12 +207,12 @@ class CAS_AggregationService(Service):
                 t2 = time.time()
                 self.logging("start_testing_thread: %.4f" % (t2-t1))
 
-                while self.has_arrived_num != self.world_size:
+                while sum(self.has_arrived) != self.world_size:
                     time.sleep(0.01)
 
                 ''' reset '''
                 self.lock.acquire()
-                self.has_arrived_num = 0
+                self.has_arrived = [0]*self.world_size
                 self.first_has_arrived = 0
                 self.averaged_client_num = 0
                 self.lock.release()
@@ -221,7 +221,7 @@ class CAS_AggregationService(Service):
             else:
                 self.lock.release()
         
-        while self.has_arrived_num != 0:
+        while self.has_arrived[rank] == 1:
             time.sleep(0.01)
         
         # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
@@ -312,8 +312,9 @@ class CAS_AggregationService(Service):
 
 
 class Default_AggregationService(Service):
-    def __init__(self, world_size):
+    def __init__(self, world_size, init_period):
         self.world_size = world_size
+        self.init_period = init_period
         self.round_id = 0
         self.flattened_params_length = 0
         self.reporting_fraction = reporting_fraction
@@ -371,18 +372,20 @@ class Default_AggregationService(Service):
             received_tensor = rpyc.classic.obtain(tensor_received)
             t2 = time.time()
             self.logging('rank %d, obtain time %.4f' % (rank, t2-t1))
-            self.averaged_tensor = received_tensor/self.world_size
+            self.averaged_tensor += received_tensor/self.received_size
 
             self.lock.acquire()
             self.averaged_client_num += 1
             if self.averaged_client_num == self.received_size:
-                ''' testing '''
-                t1 = time.time()
-                test_tensor = copy.deepcopy(self.averaged_tensor)
-                testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
-                testing_thread.start()
-                t2 = time.time()
-                self.logging("start_testing_thread: %.4f" % (t2-t1))
+
+                if self.init_period >= 100 or round_id % (100 // self.init_period) == 0:
+                    ''' testing '''
+                    t1 = time.time()
+                    test_tensor = copy.deepcopy(self.averaged_tensor)
+                    testing_thread = Thread(target=test_thread, args=(round_id, test_tensor,))
+                    testing_thread.start()
+                    t2 = time.time()
+                    self.logging("start_testing_thread: %.4f" % (t2-t1))
                 
                 self.lock.release()
                 while self.has_arrived_num != self.world_size:
@@ -402,6 +405,10 @@ class Default_AggregationService(Service):
         ''' otherwise, keep spining (blocked) '''
         while self.has_arrived_num != 0:
             time.sleep(0.01)
+
+        '''random sleep'''
+        sleep_time = round(random.random())
+        time.sleep(sleep_time)
         # self.logging('return rank %d, round_id %d' % (rank, round_id))
         return self.averaged_tensor
 
@@ -472,7 +479,7 @@ if __name__ == "__main__":
             'is_iid' : False,
             'world_size' : 20,
             'partition_rank' : 0,
-            'batch_size' : 64,
+            'batch_size' : 100,
             'dirichlet_alpha' : 1
         }
     }
@@ -501,7 +508,7 @@ if __name__ == "__main__":
     if args.interlayer_type == 'CAS':
         service = CAS_AggregationService(args.world_size, args.init_period)
     else:
-        service = Default_AggregationService(args.world_size)
+        service = Default_AggregationService(args.world_size, args.init_period)
     rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG
     rpyc_config['allow_pickle'] = True
     server = ThreadedServer(service, port=args.port, protocol_config=rpyc_config)
