@@ -1,5 +1,5 @@
 import torch
-import sys, os, argparse, copy, numpy, pprint, datetime, time, random
+import sys, os, argparse, copy, numpy, pprint, datetime, time
 
 import rpyc
 from rpyc import Service
@@ -27,10 +27,6 @@ def sync_thread(rank, round_id, tensor_to_transmit, mask, temp_period):
             time.sleep(0.01)
 
         logging('start_sync: %d' % temp_period)
-        ''' random sleep '''
-        sleep_time = round(random.random(),2)
-        time.sleep(sleep_time)
-
         t1 = time.time()
         tensor_to_restore = connection.root.aggregate(rank, round_id, tensor_to_transmit, temp_period)
         t2 = time.time()
@@ -52,10 +48,6 @@ def sync_and_update_thread(rank, round_id, tensor_to_transmit, mask, temp_period
                 current_sync_period = period_queue.get()
             sync_lock.release()
             time.sleep(0.01)
-        
-        ''' random sleep '''
-        sleep_time = round(random.random(),2)
-        time.sleep(sleep_time)
         
         logging('start_sync: %d' % temp_period)
         t1 = time.time()
