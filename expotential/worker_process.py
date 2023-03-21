@@ -5,7 +5,8 @@ import rpyc
 from rpyc import Service
 from rpyc.utils.server import ThreadedServer
 
-sys.path.append("..")
+path=os.path.dirname(__file__)
+sys.path.append(path+'/..')
 from model_manager import Model_Manager
 from dataset_manager import Dataset_Manager
 from sync_manager import Sync_Manager

@@ -7,12 +7,14 @@ from rpyc.utils.server import ThreadedServer
 
 from threading import Lock,Thread
 
-sys.path.append("..")
+path=os.path.dirname(__file__)
+sys.path.append(path+'/..')
 from model_manager import Model_Manager
 from dataset_manager import Dataset_Manager
 
 torch.set_printoptions(precision=4)
 CUDA = torch.cuda.is_available()
+print("CUDA: ",CUDA)
 
 test_lock = Lock()
 model = None
@@ -47,6 +49,7 @@ def test_thread(round_id, tensor_to_restore):
         positive_test_number = 0.0
         total_test_number = 0.0
         # loss = 0.0
+        if CUDA: tensor_to_restore = tensor_to_restore.cuda()
         ''' restore param '''
         for i, param in enumerate(model.parameters()):
             param.data = tensor_to_restore[cutoff_index_list[i][0]:cutoff_index_list[i][1]].view(param_shape_list[i])

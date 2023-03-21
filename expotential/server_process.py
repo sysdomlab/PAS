@@ -8,10 +8,6 @@ from rpyc.utils.server import ThreadedServer
 from threading import Lock,Thread
 from math import log2
 
-sys.path.append("..")
-from model_manager import Model_Manager
-from dataset_manager import Dataset_Manager
-
 torch.set_printoptions(precision=4)
 CUDA = torch.cuda.is_available()
 

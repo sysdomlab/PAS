@@ -19,7 +19,7 @@ class CAS_Interlayer():
         self.flattened_params_length = 0
         self.global_period = init_period
         self.init_period = init_period
-        # self.tune_cell = int(init_period//5)
+        self.tune_cell = int(init_period//5)
         self.last_round_iter = 0
         self.sync_params_volume = 0
         self.last_update_round = 0
@@ -46,7 +46,7 @@ class CAS_Interlayer():
                     else torch.zeros(self.flattened_params_length, dtype=torch.bool)
         self.freezing_mask = copy.deepcopy(self.mask)
 
-        self.period_list = [self.init_period, self.init_period//2, self.init_period//4, self.init_period//8, self.init_period//16]
+        self.period_list = [self.init_period, self.init_period-self.tune_cell, self.init_period-2*self.tune_cell, self.init_period-3*self.tune_cell, self.init_period-4*self.tune_cell]
         self.logging('-- Expotential CAS ')
 
 
@@ -122,7 +122,7 @@ class CAS_Interlayer():
         index = rpyc.classic.obtain(index)
         global_tune_tag = index[-1:]
         index = index[:-1].cuda() if CUDA else index[:-1]
-        self.param_sync_period[index] //= 2
+        self.param_sync_period[index] -= self.tune_cell
         if global_tune_tag == 1:
             self.tune_global_period()
 
@@ -140,8 +140,8 @@ class CAS_Interlayer():
     def tune_global_period(self):
         mask = (self.param_sync_period == self.global_period)
         self.logging('tune global period')
-        self.global_period //= 2
-        self.param_sync_period[mask] //= 2
+        self.global_period -= self.tune_cell
+        self.param_sync_period[mask] -= self.tune_cell
 
     def restore_model_from_tensor_received(self):
         """"""

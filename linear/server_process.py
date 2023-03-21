@@ -8,10 +8,6 @@ from rpyc.utils.server import ThreadedServer
 from threading import Lock,Thread
 from math import log2
 
-sys.path.append("..")
-from model_manager import Model_Manager
-from dataset_manager import Dataset_Manager
-
 torch.set_printoptions(precision=4)
 CUDA = torch.cuda.is_available()
 
@@ -39,6 +35,7 @@ class CAS_AggregationService(Service):
         self.last_global_proportion_stable_round = 0
         self.global_window_size = CAS_hyperparams_profile['observe_window_size']*2
         self.tune_threshold = CAS_hyperparams_profile['tune_threshold']
+        self.tune_cell = int(self.initial_period//5)
 
         self.param_sync_period = None
         self.last_tensor_received = None
@@ -236,11 +233,11 @@ class CAS_AggregationService(Service):
 
         self.grad_consistency = abs(self.ema_positive_grad-self.ema_negative_grad) / (self.ema_positive_grad+self.ema_negative_grad)
         self.tune_mask = ((self.grad_consistency > self.min_grad_consistency) \
-                            & (self.grad_consistency < self.tune_threshold) & (self.param_sync_period > self.initial_period//16) \
+                            & (self.grad_consistency < self.tune_threshold) & (self.param_sync_period > self.initial_period-4*self.tune_cell) \
                             & (self.round_id > self.window_start_round + self.observe_window_size))
         self.temp_mask2 = ((self.grad_consistency <= self.min_grad_consistency) | (self.grad_consistency > self.tune_threshold))
 
-        self.param_sync_period[self.tune_mask] //= 2
+        self.param_sync_period[self.tune_mask] -= self.tune_cell
         self.min_grad_consistency[self.tune_mask] = 1
         self.observe_window_size[self.tune_mask] *= 2
         self.ema_positive_grad[self.tune_mask] = 0
@@ -259,7 +256,7 @@ class CAS_AggregationService(Service):
         proportion_list = []
         grad_consistency_list = []
         tune = torch.tensor([[0]])
-        while temp_period >= self.initial_period//16:
+        while temp_period >= self.initial_period - 4*self.tune_cell:
             mask = (self.param_sync_period == temp_period)
             index = mask.nonzero()
             temp_len = len(index)
@@ -281,7 +278,7 @@ class CAS_AggregationService(Service):
                     proportion_list.append(0)
                     grad_consistency = 0       
             grad_consistency_list.append(round(float(grad_consistency),4))
-            temp_period //= 2
+            temp_period -= self.tune_cell
         self.logging("sync_period_distribution: "+str(proportion_list))
         self.logging("param_averaging_grad_consistency: "+str(grad_consistency_list))
         average_consistency = self.grad_consistency.sum() / self.flattened_params_length  
@@ -290,8 +287,8 @@ class CAS_AggregationService(Service):
         if tune == 1:
             mask = (self.param_sync_period == self.global_period)
             self.logging('tune global period')
-            self.global_period //= 2
-            self.param_sync_period[mask] //= 2
+            self.global_period -= self.tune_cell
+            self.param_sync_period[mask] -= self.tune_cell
             self.observe_window_size[mask] *= 2
             self.ema_positive_grad[mask] = 0
             self.ema_negative_grad[mask] = 0

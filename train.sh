@@ -11,7 +11,7 @@ server='localhost'
 #          18.163.105.8 18.167.96.173 18.166.78.79 18.167.84.165 16.163.42.118 16.162.25.91 18.167.116.208 43.198.78.191 18.163.183.5 18.162.62.27 18.166.51.244 43.198.74.8 16.162.44.188 18.163.102.193 18.162.61.76 16.163.58.198 18.167.121.244 18.166.67.10 16.163.109.44 18.167.85.203 \
 #          18.162.55.91 18.163.62.16 18.162.115.3 43.198.24.180 18.163.187.189 18.166.54.139 18.163.181.185 18.163.185.86 18.166.51.105 18.167.84.37 18.162.134.8 18.162.146.57 16.163.108.252 18.163.62.157 18.167.103.75 18.163.187.179 18.162.143.44 16.162.25.163 18.162.126.57 18.166.57.152"
 # clients="18.163.105.212 18.162.62.213 43.198.71.162 18.163.111.207 18.163.101.42 18.163.50.216 18.163.121.50 18.166.63.18 43.198.72.156 18.162.148.230 18.162.55.17 18.163.117.50 16.163.108.47 18.163.129.245 18.162.155.115 16.162.91.252 43.198.21.64 18.166.78.138 43.198.75.185 43.198.73.38"
-clients='localhost localhost'
+clients='localhost localhost localhost localhost localhost'
 
 echo 'Server_host: '$server
 echo 'Client_hosts: '$clients
@@ -51,10 +51,12 @@ model="CNN_FashionMnist"
 dataset="FashionMnist"
 
 ### interlayer type
-interlayer_type="Default"
-# interlayer_type="CAS"
+# interlayer_type="Default"
+interlayer_type="CAS"
 
-method="expotential"
+### tune_method
+# method="expotential"
+method="linear"
 
 work_dir=$home'/'$method
 echo $work_dir
@@ -67,16 +69,16 @@ dirichlet_alpha=0.05
 
 ### --- launch server process
 command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $work_dir/server_test_process.py \
-	--port=$((30000+trial_no)) --remarks=$remarks --trial_no=$trial_no \
+	--port=$((10000+trial_no)) --remarks=$remarks --trial_no=$trial_no \
     --model=$model --dataset=$dataset"
 echo $command
 nohup ssh $server $command >> $log_dir/server_process.log 2>&1 &
-sleep 1
+sleep 3
 
 command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $work_dir/server_process.py \
 	--port=$((20000+trial_no)) --world_size=$world_size  --init_period=$init_period \
 	--remarks=$remarks --trial_no=$trial_no --interlayer_type=$interlayer_type \
-    --test_process_port=$((30000+trial_no))"
+    --test_process_port=$((10000+trial_no))"
 echo "launch server:"
 echo $command
 echo
