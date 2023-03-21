@@ -19,7 +19,7 @@ class CAS_Interlayer():
         self.flattened_params_length = 0
         self.global_period = init_period
         self.init_period = init_period
-        self.tune_cell = int(init_period//5)
+        # self.tune_cell = int(init_period//5)
         self.last_round_iter = 0
         self.sync_params_volume = 0
         self.last_update_round = 0

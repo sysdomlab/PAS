@@ -5,10 +5,11 @@ import rpyc
 from rpyc import Service
 from rpyc.utils.server import ThreadedServer
 
+sys.path.append("..")
 from model_manager import Model_Manager
 from dataset_manager import Dataset_Manager
 from sync_manager import Sync_Manager
-from client_process_expotential import CAS_Manager
+from cas_manager import CAS_Manager
 
 torch.set_printoptions(precision=20)
 CUDA = torch.cuda.is_available()
@@ -19,7 +20,7 @@ class Client():
         ''' Variables required for local training. '''
         self.rank = sync_profile['rank']
         self.init_period = sync_prefile['init_period']
-        self.max_epoch = 10000
+        self.max_epoch = 100000
 
         ''' Model Initialization'''
         self.model_manager = Model_Manager(local_profile['model_profile'])
@@ -79,11 +80,11 @@ class Client():
                     b_x = b_x.cuda()
                     b_y = b_y.cuda()
                 self.optimizer.zero_grad()
-                t1 = time.time()
+                # t1 = time.time()
                 self.loss_func(self.model(b_x), b_y).backward()
                 self.optimizer.step()
                 t2 = time.time()
-                self.logging('training_time: %.4f' % (t2-t1))
+                # self.logging('training_time: %.4f' % (t2-t1))
                 # self.logging('finish local iteration: %d' % iter_id)
                 if self.sync_manager.try_sync_model(iter_id):
                     t3 = time.time()

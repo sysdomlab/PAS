@@ -4,14 +4,14 @@ home=$HOME'/CASP-code'
 
 ### prepare master and workers
 server='localhost'
-# server='16.162.205.1'
-# clients="18.167.116.153 43.198.22.242 43.198.78.249 18.162.155.168 18.162.245.41 18.162.146.158 16.163.109.65 18.163.77.129 43.198.25.218 18.162.148.141 43.198.71.89 43.198.74.157 43.198.74.91 43.198.76.241 16.163.40.222 18.166.52.232 18.166.56.24 18.162.126.123 18.167.102.143 18.166.70.66 \
-#          18.162.57.220 18.162.57.186 18.163.127.196 18.162.114.16 16.163.108.119 18.167.72.188 16.163.108.5 18.166.55.165 43.198.77.149 18.162.60.64 18.163.123.14 18.166.53.246 18.162.114.124 18.166.51.81 16.162.91.210 43.198.71.167 18.166.70.200 18.162.155.181 16.162.25.44 43.198.22.222 \
-#          18.162.115.160 18.162.146.109 18.162.55.224 18.163.192.216 16.163.52.255 18.163.105.94 18.166.74.82 43.198.77.138 18.166.78.131 43.198.23.45 18.166.63.52 43.198.24.179 16.163.58.49 18.166.55.85 16.162.44.130 18.166.76.41 16.162.91.105 16.163.42.84 18.163.73.211 18.162.62.57 \
-#          16.163.41.206 18.163.180.53 18.163.180.235 18.167.102.138 18.162.115.17 18.166.78.43 18.166.57.118 43.198.72.9 16.163.56.87 18.163.187.237 43.198.25.110 18.167.94.121 18.162.245.158 18.162.143.222 18.166.76.228 18.163.117.3 18.166.58.5 18.163.121.207 18.162.245.185 16.163.109.174 \
-#          18.163.35.74 18.166.78.255 18.163.77.142 18.163.183.206 18.162.61.209 18.166.56.177 18.163.50.161 43.198.24.28 18.162.114.184 18.162.214.69 18.162.62.228 18.162.57.238 18.163.77.126 18.163.181.197 16.163.128.254 43.198.25.115 16.163.103.170 43.198.74.84 18.166.77.62 18.162.56.77"
+# server='18.166.164.215'
+# clients="18.162.155.232 16.163.103.248 43.198.78.113 18.162.214.161 43.198.74.228 18.163.187.84 18.162.193.248 16.163.43.167 16.162.48.62 18.163.189.132 18.162.57.180 18.162.55.117 18.166.52.62 18.163.8.192 18.166.58.81 43.198.78.98 18.166.54.38 18.162.151.239 43.198.22.93 18.167.109.96 \
+#          43.198.19.36 18.163.35.21 18.162.155.190 18.166.55.86 43.198.21.174 18.163.5.205 18.163.55.65 18.163.105.40 18.166.76.92 18.166.53.165 16.163.55.207 18.163.41.14 18.162.56.96 16.163.41.238 43.198.25.146 16.163.55.233 18.163.117.185 18.163.110.107 18.162.114.177 18.162.126.68 \
+#          18.167.120.50 18.166.55.234 18.166.67.159 18.163.183.186 43.198.78.30 18.162.60.4 16.162.91.86 18.163.105.96 18.167.90.213 43.198.78.6 16.163.103.55 18.163.190.72 18.162.155.191 18.163.118.175 16.163.40.103 16.162.86.216 18.162.155.215 18.163.41.207 16.162.44.95 43.198.74.152 \
+#          18.163.105.8 18.167.96.173 18.166.78.79 18.167.84.165 16.163.42.118 16.162.25.91 18.167.116.208 43.198.78.191 18.163.183.5 18.162.62.27 18.166.51.244 43.198.74.8 16.162.44.188 18.163.102.193 18.162.61.76 16.163.58.198 18.167.121.244 18.166.67.10 16.163.109.44 18.167.85.203 \
+#          18.162.55.91 18.163.62.16 18.162.115.3 43.198.24.180 18.163.187.189 18.166.54.139 18.163.181.185 18.163.185.86 18.166.51.105 18.167.84.37 18.162.134.8 18.162.146.57 16.163.108.252 18.163.62.157 18.167.103.75 18.163.187.179 18.162.143.44 16.162.25.163 18.162.126.57 18.166.57.152"
 # clients="18.163.105.212 18.162.62.213 43.198.71.162 18.163.111.207 18.163.101.42 18.163.50.216 18.163.121.50 18.166.63.18 43.198.72.156 18.162.148.230 18.162.55.17 18.163.117.50 16.163.108.47 18.163.129.245 18.162.155.115 16.162.91.252 43.198.21.64 18.166.78.138 43.198.75.185 43.198.73.38"
-clients='localhost localhost localhost localhost'
+clients='localhost localhost'
 
 echo 'Server_host: '$server
 echo 'Client_hosts: '$clients
@@ -37,45 +37,58 @@ echo 'logs in '$log_dir
 # model="ResNet20_Cifar10"
 # model="ResNet18_Cifar10"
 # model="MobileNetV2_Cifar10"
-model="LSTM_KWS"
+# model="LSTM_KWS"
 # model="CNN_Cifar10"
 # model="VGG11_Cifar10"
 # model="CNN_Mnist"
 # model="CNN_EMnist"
+model="CNN_FashionMnist"
 
 ### dateset
-dataset="KWS"
+# dataset="KWS"
 # dataset="Cifar10"
 # dataset="EMnist"
+dataset="FashionMnist"
 
 ### interlayer type
 interlayer_type="Default"
 # interlayer_type="CAS"
 
+method="expotential"
+
+work_dir=$home'/'$method
+echo $work_dir
+echo $home
+
 ### sync setting
-batchsize=50
-init_period=100
+batchsize=100
+init_period=200
 dirichlet_alpha=0.05
 
 ### --- launch server process
-server_job=server_process_expotential.py
-# server_job=server_process_linear.py
-command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/$server_job \
+command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $work_dir/server_test_process.py \
+	--port=$((30000+trial_no)) --remarks=$remarks --trial_no=$trial_no \
+    --model=$model --dataset=$dataset"
+echo $command
+nohup ssh $server $command >> $log_dir/server_process.log 2>&1 &
+sleep 1
+
+command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $work_dir/server_process.py \
 	--port=$((20000+trial_no)) --world_size=$world_size  --init_period=$init_period \
 	--remarks=$remarks --trial_no=$trial_no --interlayer_type=$interlayer_type \
-    --model=$model --dataset=$dataset"
+    --test_process_port=$((30000+trial_no))"
 echo "launch server:"
 echo $command
 echo
 # nohup ssh $server $command >> $log_dir/client_process_1.log 2>&1 &
-nohup ssh $server $command > $log_dir/server_process.log 2>&1 &
+nohup ssh $server $command >> $log_dir/server_process.log 2>&1 &
 sleep 5
 
 ### --- launch sync process
 if [ "$interlayer_type" = "CAS" ]; then
     num=0
     for i in $clients; do
-        command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/sync_process.py \
+        command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $work_dir/sync_process.py \
             --server_ip=$server --server_port=$((20000+trial_no)) --rank=$num \
             --port=$((30000+ trial_no + 10*num)) --remarks=$remarks --trial_no=$trial_no"
         echo $command
@@ -87,7 +100,7 @@ if [ "$interlayer_type" = "CAS" ]; then
     ### --- launch client process
     num=0
     for i in $clients; do
-        command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/worker_process.py \
+        command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $work_dir/worker_process.py \
             --sync_process_port=$((30000 + trial_no + 10*num))\
             --server_ip=$server --server_port=$((20000+trial_no)) --rank=$num \
             --world_size=$world_size --remarks=$remarks --trial_no=$trial_no \
@@ -103,7 +116,7 @@ else
     ### --- launch client process
     num=0
     for i in $clients; do
-        command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $home/worker_process.py \
+        command="export CUDA_VISIBLE_DEVICES=$cuda && python3 $work_dir/worker_process.py \
             --sync_process_port=$((30000 + trial_no + 10*num))\
             --server_ip=$server --server_port=$((20000+trial_no)) --rank=$num \
             --world_size=$world_size --remarks=$remarks --trial_no=$trial_no \

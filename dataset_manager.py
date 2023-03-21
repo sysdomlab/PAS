@@ -180,6 +180,7 @@ class Dataset_Manager():
         return training_dataloader
 
     def get_testing_dataloader(self):
+        self.set_seed(0)
         testing_dataloader = DataLoader(dataset=self.testing_dataset,
                                         batch_size=self.batch_size,
                                         shuffle=True)
