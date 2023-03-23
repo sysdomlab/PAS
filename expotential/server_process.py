@@ -6,15 +6,14 @@ from rpyc import Service
 from rpyc.utils.server import ThreadedServer
 
 from threading import Lock,Thread
-from math import log2
 
 torch.set_printoptions(precision=4)
 CUDA = torch.cuda.is_available()
 
 CAS_hyperparams_profile = {
-    'ema_theta' : 0.9,
+    'ema_theta' : 0.8,
     'observe_window_size' : 5,
-    'tune_threshold' : 0.1,
+    'tune_threshold' : 0.05,
 }
 
 reporting_fraction = 0.4
@@ -191,6 +190,7 @@ class CAS_AggregationService(Service):
 
         self.has_arrived[rank] = 1
         if sum(self.has_arrived) == self.world_size:
+            self.logging('last receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
             self.averaged_tensor = sum(self.tensor_collected_list)/self.receive_size
             self.pooling_and_smoothing()
 
@@ -299,8 +299,9 @@ class CAS_AggregationService(Service):
 
 
 class Default_AggregationService(Service):
-    def __init__(self, world_size, test_process_port):
+    def __init__(self, world_size, init_period, test_process_port):
         self.world_size = world_size
+        self.init_period = init_period
         self.receive_size = int(world_size*reporting_fraction)
         self.round_id = 0
         self.flattened_params_length = 0
@@ -383,8 +384,9 @@ class Default_AggregationService(Service):
         if sum(self.has_arrived) == self.world_size:
             self.averaged_tensor = sum(self.tensor_collected_list)/self.receive_size
 
-            ''' testing '''
-            self.connection.root.test(self.averaged_tensor, round_id)
+            if self.init_period >= 100 or round_id % (100//self.init_period) == 0:
+                ''' testing '''
+                self.connection.root.test(self.averaged_tensor, round_id)
 
             ''' reset '''
             self.has_arrived = [0] * self.world_size
@@ -429,7 +431,7 @@ if __name__ == "__main__":
     if args.interlayer_type == 'CAS':
         service = CAS_AggregationService(args.world_size, args.init_period, args.test_process_port)
     else:
-        service = Default_AggregationService(args.world_size, args.test_process_port)
+        service = Default_AggregationService(args.world_size, args.init_period, args.test_process_port)
     rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG
     rpyc_config['allow_pickle'] = True
     server = ThreadedServer(service, port=args.port, protocol_config=rpyc_config)

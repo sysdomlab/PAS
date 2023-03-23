@@ -14,7 +14,7 @@ CUDA = torch.cuda.is_available()
 CAS_hyperparams_profile = {
     'ema_theta' : 0.9,
     'observe_window_size' : 5,
-    'tune_threshold' : 0.1,
+    'tune_threshold' : 0.05,
 }
 
 reporting_fraction = 0.4
