@@ -11,12 +11,12 @@ torch.set_printoptions(precision=4)
 CUDA = torch.cuda.is_available()
 
 CAS_hyperparams_profile = {
-    'ema_theta' : 0.8,
+    'ema_theta' : 0.9,
     'observe_window_size' : 5,
-    'tune_threshold' : 0.05,
+    'tune_threshold' : 0.1,
 }
 
-reporting_fraction = 0.4
+reporting_fraction = 1
 
 class CAS_AggregationService(Service):
     def __init__(self, world_size, init_period, test_process_port) -> None:
@@ -30,10 +30,13 @@ class CAS_AggregationService(Service):
         self.round_id = 0
         self.initial_period = init_period
         self.global_period = init_period
-        self.last_global_proportion = 1
-        self.last_global_proportion_stable_round = 0
-        self.global_window_size = CAS_hyperparams_profile['observe_window_size']*2
+        # self.last_global_proportion = 1
+        # self.last_global_proportion_stable_round = 0
+        self.min_averaged_grad_consistency = 1
+        self.average_window_start_round = 0
+        self.average_window_size = CAS_hyperparams_profile['observe_window_size']*2
         self.tune_threshold = CAS_hyperparams_profile['tune_threshold']
+
 
         self.param_sync_period = None
         self.last_tensor_received = None
@@ -146,6 +149,10 @@ class CAS_AggregationService(Service):
             self.pooling_and_smoothing()
     
             self.last_tensor_received[self.mask] = self.averaged_tensor
+
+            if temp_period == self.global_period:
+                ''' testing '''
+                self.connection.root.test(self.last_tensor_received, round_id)
 
             ''' reset '''
             self.has_arrived = [0] * self.world_size
@@ -264,11 +271,11 @@ class CAS_AggregationService(Service):
                 proportion_list.append(round(proportion*100,3))
                 grad_consistency = self.grad_consistency[mask].sum() / temp_len
                 if temp_period == self.global_period:
-                    if proportion != self.last_global_proportion:
-                        self.last_global_proportion = proportion
-                        self.last_global_proportion_stable_round = 0
-                    else: self.last_global_proportion_stable_round += 1
-                    if proportion < 0.01 or (proportion < 0.5 and self.last_global_proportion_stable_round > self.global_window_size): 
+                    # if proportion != self.last_global_proportion:
+                    #     self.last_global_proportion = proportion
+                    #     self.last_global_proportion_stable_round = 0
+                    # else: self.last_global_proportion_stable_round += 1
+                    if proportion < 0.01 : 
                         tune = torch.tensor([[1]])
             else:
                 if temp_period == self.global_period:
@@ -281,11 +288,25 @@ class CAS_AggregationService(Service):
         self.logging("sync_period_distribution: "+str(proportion_list))
         self.logging("param_averaging_grad_consistency: "+str(grad_consistency_list))
         average_consistency = self.grad_consistency.sum() / self.flattened_params_length  
+        sorted_value, sorted_index = torch.sort(self.grad_consistency)
+        ten_part = int(self.flattened_params_length*0.1)
+        some_grad_consistency_list = []
+        for i in range(11):
+            some_grad_consistency_list.append(round(float(sorted_value[ten_part*i]),4))
+        self.logging("some_grad_consistency_list: "+str(some_grad_consistency_list))
+        # if average_consistency < self.min_averaged_grad_consistency:
+        #     self.min_averaged_grad_consistency = average_consistency
+        #     self.average_window_start_round = self.round_id
+        # if self.round_id > self.average_window_start_round + self.average_window_size and self.global_period > self.initial_period//16:
+        #     tune = torch.tensor([[1]])
         self.logging("round_id: %d; average_consistency: %.4f" % (self.round_id, average_consistency))
 
         if tune == 1:
             mask = (self.param_sync_period == self.global_period)
             self.logging('tune global period')
+            # self.average_window_start_round = self.round_id
+            # self.min_averaged_grad_consistency = 1
+            # self.average_window_size *= 2
             self.global_period //= 2
             self.param_sync_period[mask] //= 2
             self.observe_window_size[mask] *= 2
