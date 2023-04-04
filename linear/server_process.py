@@ -35,7 +35,7 @@ class CAS_AggregationService(Service):
         self.last_global_proportion_stable_round = 0
         self.global_window_size = CAS_hyperparams_profile['observe_window_size']*2
         self.tune_threshold = CAS_hyperparams_profile['tune_threshold']
-        self.tune_cell = int(self.initial_period//5)
+        self.tune_cell = int((init_period//16)*15//4)
 
         self.param_sync_period = None
         self.last_tensor_received = None

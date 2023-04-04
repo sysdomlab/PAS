@@ -16,7 +16,7 @@ CAS_hyperparams_profile = {
     'tune_threshold' : 0.1,
 }
 
-reporting_fraction = 1
+reporting_fraction = 0.4
 
 class CAS_AggregationService(Service):
     def __init__(self, world_size, init_period, test_process_port) -> None:
@@ -55,6 +55,7 @@ class CAS_AggregationService(Service):
         self.has_arrived = [0] * self.world_size
         self.tensor_collected_list = [0] * self.receive_size
         self.reporting_index = None
+        random.seed(0)
 
         ''' connect to the Test Process '''
         rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG
@@ -366,7 +367,7 @@ class Default_AggregationService(Service):
             self.lock.acquire()
 
         self.has_arrived[rank] = 1
-        if sum(self.has_arrived) == self.world_size:
+        if sum(self.has_arrived) == self.world_size:          
             self.averaged_tensor = sum(self.tensor_collected_list)/self.receive_size
             ''' reset '''
             self.has_arrived = [0]*self.world_size
@@ -403,6 +404,7 @@ class Default_AggregationService(Service):
         self.lock.acquire()
         self.has_arrived[rank] = 1
         if sum(self.has_arrived) == self.world_size:
+            self.logging('last receive rank %d, round_id %d' % (rank, round_id))
             self.averaged_tensor = sum(self.tensor_collected_list)/self.receive_size
 
             if self.init_period >= 100 or round_id % (100//self.init_period) == 0:
