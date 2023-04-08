@@ -8,7 +8,7 @@ server='18.166.161.152'
 # clients=""
 # clients="16.162.253.208 18.163.208.126 43.198.97.21 18.163.125.112 43.198.89.192 43.198.96.62 16.162.254.68 16.163.94.120 16.162.3.192 18.163.24.72 18.162.191.238 18.167.69.35 18.162.42.109 18.167.173.216 43.198.99.104 43.198.90.119 43.198.107.125 18.162.228.100 16.163.30.102 18.162.45.2 \
 #          18.163.49.102 18.163.197.50 18.167.54.109 43.198.102.196 16.162.46.252 18.163.81.252 43.198.97.139 18.162.200.244 16.162.46.54 18.166.15.97 18.166.28.155 18.163.125.22 18.167.173.233 43.198.110.112 43.198.89.220 18.162.97.109 18.163.6.253 18.162.200.1 18.166.211.79 43.198.100.231"
-clients='localhost localhost'
+clients='localhost localhost localhost localhost'
 
 echo 'Server_host: '$server
 echo 'Client_hosts: '$clients
@@ -31,10 +31,10 @@ rm -rf Latest_Log && ln -s $log_dir Latest_Log
 echo 'logs in '$log_dir
 
 ### model
-model="ResNet20_Cifar10"
+# model="ResNet20_Cifar10"
 # model="ResNet18_Cifar10"
 # model="MobileNetV2_Cifar10"
-# model="LSTM_KWS"
+model="LSTM_KWS"
 # model="CNN_Cifar10"
 # model="VGG11_Cifar10"
 # model="CNN_Mnist"
@@ -42,8 +42,8 @@ model="ResNet20_Cifar10"
 # model="CNN_FashionMnist"
 
 ### dateset
-# dataset="KWS"
-dataset="Cifar10"
+dataset="KWS"
+# dataset="Cifar10"
 # dataset="EMnist"
 # dataset="FashionMnist"
 
@@ -62,8 +62,8 @@ echo $work_dir
 echo $home
 
 ### sync setting
-batchsize=32
-init_period=200
+batchsize=100
+init_period=100
 dirichlet_alpha=0.05
 
 ### --- launch server process

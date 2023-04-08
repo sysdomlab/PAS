@@ -22,7 +22,7 @@ GIFT_hyperparams_profile = {
     'tune_threshold' : 0.1,
 }
 
-reporting_fraction = 1
+reporting_fraction = 0.4
 
 class CAS_AggregationService(Service):
     def __init__(self, world_size, init_period, test_process_port) -> None:
@@ -447,10 +447,11 @@ class GIFT_AggregationServer(Service):
         self.observe_window_size = GIFT_hyperparams_profile['observe_window_size']
         self.min_consistency = 1
         self.window_start_round = 0
-        self.positive_grad_ema = None
-        self.negative_grad_ema = None
+        self.ema_positive_grad = None
+        self.ema_negative_grad = None
         self.last_tensor_received = None
         self.last_tune_round = 0
+        self.tune=0
 
         self.averaged_tensor = None
         self.has_arrived = [0] * world_size
@@ -486,8 +487,8 @@ class GIFT_AggregationServer(Service):
             if self.first_has_arrived == 0:
                 self.first_has_arrived = 1
                 self.flattened_params_length = len(self.tensor_collected_list[index])
-                self.positive_grad_ema = torch.zeros(self.flattened_params_length)
-                self.negative_grad_ema = torch.zeros(self.flattened_params_length)
+                self.ema_positive_grad = torch.zeros(self.flattened_params_length)
+                self.ema_negative_grad = torch.zeros(self.flattened_params_length)
 
         else:
             self.lock.acquire()
@@ -536,9 +537,9 @@ class GIFT_AggregationServer(Service):
             self.pooling_and_smoothing()
             self.last_tensor_received = self.averaged_tensor
 
-            tune = 0
+            self.tune = 0
             if (round_id-self.last_tune_round) % (self.init_period//self.current_period) == 0:
-                tune = self.update_period()
+                self.tune = self.update_period()
                 self.last_tune_round = self.round_id
                 ''' testing '''
                 self.connection.root.test(self.averaged_tensor, round_id)
@@ -557,7 +558,7 @@ class GIFT_AggregationServer(Service):
         while self.has_arrived[rank] == 1:
             time.sleep(0.01)
         # self.logging('return rank %d, round_id %d' % (rank, round_id))
-        return [self.averaged_tensor, tune]
+        return [self.averaged_tensor, self.tune]
 
     def pooling_and_smoothing(self):
         positive_grad = torch.zeros(self.flattened_params_length)
@@ -574,7 +575,7 @@ class GIFT_AggregationServer(Service):
         self.ema_negative_grad = self.ema_theta*self.ema_negative_grad + (1-self.ema_theta)*negative_grad
 
     def update_period(self):
-        grad_consistency = abs(self.ema_positive_grad-self.ema_negative_grad) / (self.ema_positive_grad+self.ema_negative_grad)
+        grad_consistency = (abs(self.ema_positive_grad-self.ema_negative_grad) / (self.ema_positive_grad+self.ema_negative_grad)).sum()/self.flattened_params_length
         self.logging("averaging gradient consistency: %.4f" % grad_consistency)
         if (grad_consistency < self.min_consistency):
             self.min_consistency = grad_consistency
@@ -583,9 +584,10 @@ class GIFT_AggregationServer(Service):
             if self.round_id > self.window_start_round + self.observe_window_size and self.current_period > 1:
                 self.current_period //= 2
                 self.window_start_round = self.round_id
+                self.observe_window_size *= 2
                 self.min_consistency = 1
-                self.positive_grad_ema = torch.zeros(self.flattened_params_length)
-                self.negative_grad_ema = torch.zeros(self.flattened_params_length)
+                self.ema_positive_grad = torch.zeros(self.flattened_params_length)
+                self.ema_negative_grad = torch.zeros(self.flattened_params_length)
                 self.logging('sync period tune to %d' % self.current_period)
                 return 1
         return 0

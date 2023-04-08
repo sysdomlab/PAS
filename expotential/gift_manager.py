@@ -129,9 +129,9 @@ class GIFT_Manager():
             t1 = time.time()
             list_received = self.connection.root.aggregate(self.rank, self.sync_round_id, flattened_tensor_to_transmit)
             t2 = time.time()
-            list_received = rpyc.classic.obtain(tensor_received).cuda() if CUDA else rpyc.classic.obtain(tensor_received)
+            list_received = rpyc.classic.obtain(list_received)
             tune = list_received[1]
-            tensor_received = list_received[0]
+            tensor_received = list_received[0].cuda() if CUDA else list_received[0]
             t3 = time.time()
             self.logging('sync_time: %.4f, obtain_time: %.4f' % (t3-t1,t3-t2))
             self.transmit_interlayer.restore_model_from_tensor_received(tensor_received)
