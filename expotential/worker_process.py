@@ -11,6 +11,7 @@ from model_manager import Model_Manager
 from dataset_manager import Dataset_Manager
 from sync_manager import Sync_Manager
 from cas_manager import CAS_Manager
+from gift_manager import GIFT_Manager
 
 torch.set_printoptions(precision=20)
 CUDA = torch.cuda.is_available()
@@ -38,6 +39,8 @@ class Client():
         """ Sync-related variables """
         if sync_profile['interlayer_type'] == 'CAS':
             self.sync_manager = CAS_Manager(self.model, sync_prefile)
+        elif sync_profile['interlayer_type'] == 'GIFT':
+            self.sync_manager = GIFT_Manager(self.model, sync_prefile)
         else:
             self.sync_manager = Sync_Manager(self.model, sync_prefile)
 

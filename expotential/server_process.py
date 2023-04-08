@@ -16,7 +16,13 @@ CAS_hyperparams_profile = {
     'tune_threshold' : 0.1,
 }
 
-reporting_fraction = 0.4
+GIFT_hyperparams_profile = {
+    'ema_theta' : 0.9,
+    'observe_window_size' : 5,
+    'tune_threshold' : 0.1,
+}
+
+reporting_fraction = 1
 
 class CAS_AggregationService(Service):
     def __init__(self, world_size, init_period, test_process_port) -> None:
@@ -428,6 +434,163 @@ class Default_AggregationService(Service):
         return self.averaged_tensor
 
 
+class GIFT_AggregationServer(Service):
+    def __init__(self, world_size, init_period, test_process_port):
+        self.world_size = world_size
+        self.init_period = init_period
+        self.current_period = init_period
+        self.receive_size = int(world_size*reporting_fraction)
+        self.round_id = 0
+        self.flattened_params_length = 0
+        self.lock = Lock()
+        self.ema_theta = GIFT_hyperparams_profile['ema_theta']
+        self.observe_window_size = GIFT_hyperparams_profile['observe_window_size']
+        self.min_consistency = 1
+        self.window_start_round = 0
+        self.positive_grad_ema = None
+        self.negative_grad_ema = None
+        self.last_tensor_received = None
+        self.last_tune_round = 0
+
+        self.averaged_tensor = None
+        self.has_arrived = [0] * world_size
+        self.tensor_collected_list = [0] * self.receive_size
+        self.reporting_index = None
+        self.first_has_arrived = 0
+
+        ''' connect to the Test Process '''
+        rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG
+        rpyc_config['allow_pickle'] = True
+        self.connection = rpyc.connect('localhost', test_process_port, config=rpyc_config)
+        self.connection._config['sync_request_timeout']=120
+        # self.test = rpyc.async_(self.connection.root.test)
+
+    def logging(self, string):
+        print('['+str(datetime.datetime.now())+'] [Server] '+str(string))
+        sys.stdout.flush()
+
+    def exposed_sync_initial_model(self, rank, tensor_received):
+        # self.logging('receive rank %d, sync_initial_model' % (rank))
+        self.lock.acquire()
+        if self.reporting_index == None:
+            self.reporting_index = random.sample(range(self.world_size), self.receive_size)
+        if rank in self.reporting_index:
+            index = self.reporting_index.index(rank)
+        else:
+            index = -1
+        self.lock.release()
+
+        if index != -1:
+            self.tensor_collected_list[index] = rpyc.classic.obtain(tensor_received)
+            self.lock.acquire()
+            if self.first_has_arrived == 0:
+                self.first_has_arrived = 1
+                self.flattened_params_length = len(self.tensor_collected_list[index])
+                self.positive_grad_ema = torch.zeros(self.flattened_params_length)
+                self.negative_grad_ema = torch.zeros(self.flattened_params_length)
+
+        else:
+            self.lock.acquire()
+
+        self.has_arrived[rank] = 1
+        if sum(self.has_arrived) == self.world_size:          
+            self.averaged_tensor = sum(self.tensor_collected_list)/self.receive_size
+            self.last_tensor_received = copy.deepcopy(self.averaged_tensor)
+            ''' reset '''
+            self.has_arrived = [0]*self.world_size
+            self.tensor_collected_list = [0]*self.receive_size
+            self.first_has_arrived = 0
+            self.reporting_index = None
+            self.logging('finishing round 0')
+        self.lock.release()
+
+        while self.has_arrived[rank] == 1:
+            time.sleep(0.01)
+        
+        return self.averaged_tensor
+
+
+    def exposed_aggregate(self, rank, round_id, tensor_received):
+        # self.logging('receive rank %d, round_id %d' % (rank, round_id))
+        self.lock.acquire()
+        if self.reporting_index == None:
+            self.reporting_index = random.sample(range(self.world_size), self.receive_size)
+        if rank in self.reporting_index:
+            index = self.reporting_index.index(rank)
+        else:
+            index = -1
+        self.lock.release()
+
+        if index != -1:
+            t1 = time.time()
+            self.tensor_collected_list[index] = rpyc.classic.obtain(tensor_received)
+            t2 = time.time()
+            self.logging('rank %d, obtain time %.4f' % (rank, t2-t1))
+            self.round_id = round_id
+
+        self.lock.acquire()
+        self.has_arrived[rank] = 1
+        if sum(self.has_arrived) == self.world_size:
+            self.logging('last receive rank %d, round_id %d' % (rank, round_id))
+            self.averaged_tensor = sum(self.tensor_collected_list)/self.receive_size
+            self.pooling_and_smoothing()
+            self.last_tensor_received = self.averaged_tensor
+
+            tune = 0
+            if (round_id-self.last_tune_round) % (self.init_period//self.current_period) == 0:
+                tune = self.update_period()
+                self.last_tune_round = self.round_id
+                ''' testing '''
+                self.connection.root.test(self.averaged_tensor, round_id)
+
+            ''' reset '''
+            self.has_arrived = [0] * self.world_size
+            self.tensor_collected_list = [0] * self.receive_size
+            self.first_has_arrived = 0
+            self.reporting_index = None
+
+            self.logging('finishing round %d' % round_id)
+        self.lock.release()
+
+
+        ''' otherwise, keep spining (blocked) '''
+        while self.has_arrived[rank] == 1:
+            time.sleep(0.01)
+        # self.logging('return rank %d, round_id %d' % (rank, round_id))
+        return [self.averaged_tensor, tune]
+
+    def pooling_and_smoothing(self):
+        positive_grad = torch.zeros(self.flattened_params_length)
+        negative_grad = torch.zeros(self.flattened_params_length)
+        
+        ''' pooling '''
+        for i in range(self.receive_size):
+            grad_tensor = self.tensor_collected_list[i] - self.last_tensor_received
+            positive_grad += torch.where(grad_tensor > 0, grad_tensor, 0)
+            negative_grad -= torch.where(grad_tensor <= 0, grad_tensor, 0)
+
+        ''' smoothing '''
+        self.ema_positive_grad = self.ema_theta*self.ema_positive_grad + (1-self.ema_theta)*positive_grad
+        self.ema_negative_grad = self.ema_theta*self.ema_negative_grad + (1-self.ema_theta)*negative_grad
+
+    def update_period(self):
+        grad_consistency = abs(self.ema_positive_grad-self.ema_negative_grad) / (self.ema_positive_grad+self.ema_negative_grad)
+        self.logging("averaging gradient consistency: %.4f" % grad_consistency)
+        if (grad_consistency < self.min_consistency):
+            self.min_consistency = grad_consistency
+            self.window_start_round = self.round_id
+        else:
+            if self.round_id > self.window_start_round + self.observe_window_size and self.current_period > 1:
+                self.current_period //= 2
+                self.window_start_round = self.round_id
+                self.min_consistency = 1
+                self.positive_grad_ema = torch.zeros(self.flattened_params_length)
+                self.negative_grad_ema = torch.zeros(self.flattened_params_length)
+                self.logging('sync period tune to %d' % self.current_period)
+                return 1
+        return 0
+
+
 def logging(string):
     print('['+str(datetime.datetime.now())+'] [Server] '+str(string))
     sys.stdout.flush()
@@ -453,6 +616,8 @@ if __name__ == "__main__":
 
     if args.interlayer_type == 'CAS':
         service = CAS_AggregationService(args.world_size, args.init_period, args.test_process_port)
+    elif args.interlayer_type == 'GIFT':
+        service = GIFT_AggregationServer(args.world_size, args.init_period, args.test_process_port)
     else:
         service = Default_AggregationService(args.world_size, args.init_period, args.test_process_port)
     rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG

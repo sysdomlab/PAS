@@ -120,7 +120,7 @@ class GIFT_Interlayer():
 
 
     def update_frequency(self, grad_consistency):
-        if (grad_consistency < self.grad_consistency) or (grad_consistency - self.grad_consistency > 0.03):
+        if (grad_consistency < self.grad_consistency):
             self.grad_consistency = grad_consistency
             self.window_start_iter = self.iter_id
         else:
@@ -211,6 +211,8 @@ class Sync_Manager():
         # self.model = self.model.cpu() if CUDA else self.model # "tcp" can support gpu
         if interlayer_type == 'Default':
             transmit_interlayer = Default_Interlayer(self.model, self.rank, self.init_period)
+        elif interlayer_type == 'GIFT' :
+            transmit_interlayer = GIFT_Interlayer(self.model, self.init_period, InterlayerProfileDict['GIFT'], self.rank)
         return transmit_interlayer
 
     def sync_init_model(self):
