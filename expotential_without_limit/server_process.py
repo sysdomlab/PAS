@@ -295,19 +295,19 @@ class CAS_AggregationService(Service):
         for i in range(11):
             some_grad_consistency_list.append(round(float(sorted_value[ten_part*i]),4))
         self.logging("some_grad_consistency_list: "+str(some_grad_consistency_list))
-        # if average_consistency < self.min_averaged_grad_consistency:
-        #     self.min_averaged_grad_consistency = average_consistency
-        #     self.average_window_start_round = self.round_id
-        # if self.round_id > self.average_window_start_round + self.average_window_size and self.global_period > self.initial_period//16:
-        #     tune = torch.tensor([[1]])
+        if average_consistency < self.min_averaged_grad_consistency:
+            self.min_averaged_grad_consistency = average_consistency
+            self.average_window_start_round = self.round_id
+        if self.round_id > self.average_window_start_round + self.average_window_size and self.global_period > self.initial_period//16:
+            tune = torch.tensor([[1]])
         self.logging("round_id: %d; average_consistency: %.4f" % (self.round_id, average_consistency))
 
         if tune == 1:
             mask = (self.param_sync_period == self.global_period)
             self.logging('tune global period')
-            # self.average_window_start_round = self.round_id
-            # self.min_averaged_grad_consistency = 1
-            # self.average_window_size *= 2
+            self.average_window_start_round = self.round_id
+            self.min_averaged_grad_consistency = 1
+            self.average_window_size *= 2
             self.global_period //= 2
             self.param_sync_period[mask] //= 2
             self.observe_window_size[mask] *= 2

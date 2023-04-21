@@ -22,7 +22,9 @@ GIFT_hyperparams_profile = {
     'tune_threshold' : 0.1,
 }
 
-reporting_fraction = 0.4
+
+
+reporting_fraction = 1
 
 class CAS_AggregationService(Service):
     def __init__(self, world_size, init_period, test_process_port) -> None:
@@ -36,12 +38,13 @@ class CAS_AggregationService(Service):
         self.round_id = 0
         self.initial_period = init_period
         self.global_period = init_period
-        # self.last_global_proportion = 1
-        # self.last_global_proportion_stable_round = 0
+        self.last_global_proportion = 1
+        self.last_global_proportion_stable_round = 0
         self.min_averaged_grad_consistency = 1
         self.average_window_start_round = 0
-        self.average_window_size = CAS_hyperparams_profile['observe_window_size']*2
         self.tune_threshold = CAS_hyperparams_profile['tune_threshold']
+        self.divisor = 4
+        self.average_window_size = 20
 
 
         self.param_sync_period = None
@@ -102,7 +105,7 @@ class CAS_AggregationService(Service):
                 self.ema_positive_grad = torch.zeros(self.flattened_params_length)
                 self.ema_negative_grad = torch.zeros(self.flattened_params_length)
                 self.param_sync_period = torch.full([self.flattened_params_length], self.initial_period, dtype=torch.int32)
-                self.observe_window_size = torch.full([self.flattened_params_length], CAS_hyperparams_profile['observe_window_size'], dtype=torch.int32)
+                self.observe_window_size = torch.full([self.flattened_params_length], CAS_hyperparams_profile['observe_window_size']*2, dtype=torch.int32)
         else:
             self.lock.acquire()
         self.has_arrived[rank] = 1
@@ -124,7 +127,7 @@ class CAS_AggregationService(Service):
         # self.logging('return rank %d, round_id 0' % rank)
         return self.averaged_tensor
 
-    def exposed_aggregate(self, rank, round_id, tensor_received, temp_period):
+    def exposed_aggregate(self, rank, round_id, tensor_list_received, temp_period):
         # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         self.lock.acquire()
         if self.reporting_index == None:
@@ -136,9 +139,9 @@ class CAS_AggregationService(Service):
         self.lock.release()
 
         if index != -1:
-            # t1 = time.time()
-            self.tensor_collected_list[index] = rpyc.classic.obtain(tensor_received)
-            # t2 = time.time()
+            t1 = time.time()
+            self.tensor_collected_list[index] = rpyc.classic.obtain(tensor_list_received)[0]
+            t2 = time.time()
             # self.logging('rank %d ontain_time %.4f' % (rank, t2-t1))
             self.lock.acquire()
             if self.first_has_arrived == 0:
@@ -173,9 +176,9 @@ class CAS_AggregationService(Service):
             time.sleep(0.01)
         
         # self.logging('return rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
-        return self.averaged_tensor
+        return [self.averaged_tensor]
 
-    def exposed_aggregate_and_update(self, rank, round_id, tensor_received, temp_period):
+    def exposed_aggregate_and_update(self, rank, round_id, tensor_list_received, temp_period):
         # self.logging('receive rank %d, round_id %d, temp_period %d' % (rank, round_id, temp_period))
         self.lock.acquire()
         if self.reporting_index == None:
@@ -188,7 +191,7 @@ class CAS_AggregationService(Service):
 
         if index != -1:
             t1 = time.time()
-            self.tensor_collected_list[index] = rpyc.classic.obtain(tensor_received)
+            self.tensor_collected_list[index] = rpyc.classic.obtain(tensor_list_received)[0]
             t2 = time.time()
             self.logging('rank %d ontain_time %.4f' % (rank, t2-t1))
             self.lock.acquire()
@@ -250,9 +253,9 @@ class CAS_AggregationService(Service):
                             & (self.round_id > self.window_start_round + self.observe_window_size))
         self.temp_mask2 = ((self.grad_consistency <= self.min_grad_consistency) | (self.grad_consistency > self.tune_threshold))
 
-        self.param_sync_period[self.tune_mask] //= 2
+        self.param_sync_period[self.tune_mask] //= self.divisor
         self.min_grad_consistency[self.tune_mask] = 1
-        self.observe_window_size[self.tune_mask] *= 2
+        self.observe_window_size[self.tune_mask] *= self.divisor
         self.ema_positive_grad[self.tune_mask] = 0
         self.ema_negative_grad[self.tune_mask] = 0
         self.window_start_round[self.tune_mask] = self.round_id
@@ -274,15 +277,17 @@ class CAS_AggregationService(Service):
             index = mask.nonzero()
             temp_len = len(index)
             if temp_len != 0:
-                proportion = temp_len/self.flattened_params_length
-                proportion_list.append(round(proportion*100,3))
+                proportion = (temp_len/self.flattened_params_length)*100
+                proportion_list.append(round(proportion,3))
                 grad_consistency = self.grad_consistency[mask].sum() / temp_len
                 if temp_period == self.global_period:
-                    # if proportion != self.last_global_proportion:
-                    #     self.last_global_proportion = proportion
-                    #     self.last_global_proportion_stable_round = 0
-                    # else: self.last_global_proportion_stable_round += 1
-                    if proportion < 0.01 : 
+                    if int(proportion) != self.last_global_proportion:
+                        self.last_global_proportion = int(proportion)
+                        self.last_global_proportion_stable_round = 0
+                    else: self.last_global_proportion_stable_round += 1
+                    if self.last_global_proportion_stable_round >= self.average_window_size:
+                        tune = torch.tensor([[1]])
+                    if proportion < 1 : 
                         tune = torch.tensor([[1]])
             else:
                 if temp_period == self.global_period:
@@ -291,7 +296,7 @@ class CAS_AggregationService(Service):
                     proportion_list.append(0)
                     grad_consistency = 0       
             grad_consistency_list.append(round(float(grad_consistency),4))
-            temp_period //= 2
+            temp_period //= self.divisor
         self.logging("sync_period_distribution: "+str(proportion_list))
         self.logging("param_averaging_grad_consistency: "+str(grad_consistency_list))
         average_consistency = self.grad_consistency.sum() / self.flattened_params_length  
@@ -304,26 +309,28 @@ class CAS_AggregationService(Service):
         # if average_consistency < self.min_averaged_grad_consistency:
         #     self.min_averaged_grad_consistency = average_consistency
         #     self.average_window_start_round = self.round_id
-        # if self.round_id > self.average_window_start_round + self.average_window_size and self.global_period > self.initial_period//16:
+        # if self.round_id > self.average_window_start_round + self.average_window_size  and self.global_period > 1:
         #     tune = torch.tensor([[1]])
         self.logging("round_id: %d; average_consistency: %.4f" % (self.round_id, average_consistency))
 
-        if tune == 1:
+        if tune == 1 and self.global_period > self.initial_period//16:
             mask = (self.param_sync_period == self.global_period)
             self.logging('tune global period')
             # self.average_window_start_round = self.round_id
             # self.min_averaged_grad_consistency = 1
-            # self.average_window_size *= 2
-            self.global_period //= 2
-            self.param_sync_period[mask] //= 2
-            self.observe_window_size[mask] *= 2
+            self.average_window_size += 20*(self.divisor//2)
+            self.global_period //= self.divisor
+            self.param_sync_period[mask] //= self.divisor
+            self.observe_window_size[mask] *= self.divisor
             self.ema_positive_grad[mask] = 0
             self.ema_negative_grad[mask] = 0
             self.min_grad_consistency[mask] = 1
+            self.window_start_round[mask] = self.round_id
             self.last_global_proportion = 1
             self.last_global_proportion_stable_round = 0
-        
-        return tune
+            return tune
+        else: 
+            return torch.tensor([[0]])
 
 
 class Default_AggregationService(Service):
@@ -413,9 +420,9 @@ class Default_AggregationService(Service):
             self.logging('last receive rank %d, round_id %d' % (rank, round_id))
             self.averaged_tensor = sum(self.tensor_collected_list)/self.receive_size
 
-            if self.init_period >= 100 or round_id % (100//self.init_period) == 0:
-                ''' testing '''
-                self.connection.root.test(self.averaged_tensor, round_id)
+            # if self.init_period >= 100 or round_id % (100//self.init_period) == 0:
+            ''' testing '''
+            self.connection.root.test(self.averaged_tensor, round_id)
 
             ''' reset '''
             self.has_arrived = [0] * self.world_size
@@ -446,11 +453,14 @@ class GIFT_AggregationServer(Service):
         self.ema_theta = GIFT_hyperparams_profile['ema_theta']
         self.observe_window_size = GIFT_hyperparams_profile['observe_window_size']
         self.min_consistency = 1
-        self.window_start_round = 0
+        # self.window_start_round = 0
         self.ema_positive_grad = None
         self.ema_negative_grad = None
         self.last_tensor_received = None
         self.last_tune_round = 0
+        self.min_grad_consistency = None
+        self.window_start_round = None
+        self.tune_tag = None
         self.tune=0
 
         self.averaged_tensor = None
@@ -489,6 +499,9 @@ class GIFT_AggregationServer(Service):
                 self.flattened_params_length = len(self.tensor_collected_list[index])
                 self.ema_positive_grad = torch.zeros(self.flattened_params_length)
                 self.ema_negative_grad = torch.zeros(self.flattened_params_length)
+                self.min_grad_consistency = torch.full([self.flattened_params_length], 1, dtype=torch.float32)
+                self.window_start_round = torch.zeros(self.flattened_params_length)
+                self.tune_tag = torch.zeros(self.flattened_params_length)
 
         else:
             self.lock.acquire()
@@ -541,8 +554,8 @@ class GIFT_AggregationServer(Service):
             if (round_id-self.last_tune_round) % (self.init_period//self.current_period) == 0:
                 self.tune = self.update_period()
                 self.last_tune_round = self.round_id
-                ''' testing '''
-                self.connection.root.test(self.averaged_tensor, round_id)
+            ''' testing '''
+            self.connection.root.test(self.averaged_tensor, round_id)
 
             ''' reset '''
             self.has_arrived = [0] * self.world_size
@@ -575,21 +588,33 @@ class GIFT_AggregationServer(Service):
         self.ema_negative_grad = self.ema_theta*self.ema_negative_grad + (1-self.ema_theta)*negative_grad
 
     def update_period(self):
-        grad_consistency = (abs(self.ema_positive_grad-self.ema_negative_grad) / (self.ema_positive_grad+self.ema_negative_grad)).sum()/self.flattened_params_length
-        self.logging("averaging gradient consistency: %.4f" % grad_consistency)
-        if (grad_consistency < self.min_consistency):
-            self.min_consistency = grad_consistency
-            self.window_start_round = self.round_id
-        else:
-            if self.round_id > self.window_start_round + self.observe_window_size and self.current_period > 1:
-                self.current_period //= 2
-                self.window_start_round = self.round_id
-                self.observe_window_size *= 2
-                self.min_consistency = 1
-                self.ema_positive_grad = torch.zeros(self.flattened_params_length)
-                self.ema_negative_grad = torch.zeros(self.flattened_params_length)
-                self.logging('sync period tune to %d' % self.current_period)
-                return 1
+        grad_consistency = abs(self.ema_positive_grad-self.ema_negative_grad) / (self.ema_positive_grad+self.ema_negative_grad)
+
+        mask2 = ((grad_consistency > self.min_grad_consistency) \
+                 & (grad_consistency<0.1) & (self.round_id > self.window_start_round + self.observe_window_size))
+        self.tune_tag[mask2] = 1
+
+
+        mask1 = ((grad_consistency <= self.min_grad_consistency) | (grad_consistency > 0.1))
+        self.window_start_round[mask1] = self.round_id
+        self.min_grad_consistency[mask1] = grad_consistency[mask1]
+
+        average_consistency = grad_consistency.sum()/self.flattened_params_length
+        self.logging("averaging gradient consistency: %.4f, stable proportion: %.4f" % (average_consistency, self.tune_tag.sum()/self.flattened_params_length))
+        # if (grad_consistency < self.min_consistency):
+        #     self.min_consistency = grad_consistency
+        #     self.window_start_round = self.round_id
+        # else:
+        if self.tune_tag.sum()>0.99*self.flattened_params_length and self.current_period > self.init_period//16:
+            self.current_period //= 2
+            self.window_start_round.fill_(self.round_id)
+            self.observe_window_size *= 2
+            self.min_grad_consistency.fill_(1)
+            self.tune_tag.fill_(0)
+            self.ema_positive_grad = torch.zeros(self.flattened_params_length)
+            self.ema_negative_grad = torch.zeros(self.flattened_params_length)
+            self.logging('sync period tune to %d' % self.current_period)
+            return 1
         return 0
 
 

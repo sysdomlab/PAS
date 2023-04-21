@@ -23,6 +23,8 @@ class CAS_Interlayer():
         self.last_round_iter = 0
         self.sync_params_volume = 0
         self.last_update_round = 0
+        self.tune_times = int(1)
+        self.divisor = 4
 
         self.tensor_of_flattened_params = None
         self.freezing_tensor_of_flattened_params = None
@@ -46,7 +48,12 @@ class CAS_Interlayer():
                     else torch.zeros(self.flattened_params_length, dtype=torch.bool)
         self.freezing_mask = copy.deepcopy(self.mask)
 
-        self.period_list = [self.init_period, self.init_period//2, self.init_period//4, self.init_period//8, self.init_period//16]
+
+        self.period_list = []
+        temp_period = init_period
+        while temp_period >= 1:
+            self.period_list.append(temp_period)
+            temp_period //= self.divisor
         self.logging('-- Expotential CAS ')
 
 
@@ -99,13 +106,14 @@ class CAS_Interlayer():
         self.freezing_tensor_of_flattened_params[self.mask] = self.tensor_of_flattened_params[self.mask]
         self.freezing_mask += self.mask
         t1 = time.time()
-        if round_iter == self.global_period and (self.round_id - self.last_update_round) == (self.init_period//self.global_period):
+        # if round_iter == self.global_period and (self.round_id - self.last_update_round) == (self.tune_times):
+        if round_iter == self.global_period:
             self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (self.iter_id, self.round_id, self.sync_params_volume))
-            self.connection.root.sync_and_update(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
-            if CUDA else self.connection.root.sync_and_update(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
+            self.connection.root.sync_and_update([self.tensor_of_flattened_params[self.mask].cpu()], self.mask.cpu(), round_iter) \
+            if CUDA else self.connection.root.sync_and_update([self.tensor_of_flattened_params[self.mask]], self.mask, round_iter)
         else:
-            self.connection.root.sync(self.tensor_of_flattened_params[self.mask].cpu(), self.mask.cpu(), round_iter) \
-            if CUDA else self.connection.root.sync(self.tensor_of_flattened_params[self.mask], self.mask, round_iter)
+            self.connection.root.sync([self.tensor_of_flattened_params[self.mask].cpu()], self.mask.cpu(), round_iter) \
+            if CUDA else self.connection.root.sync([self.tensor_of_flattened_params[self.mask]], self.mask, round_iter)
         # self.sync_fun(transmit_list, round_iter)
         t2 = time.time()
         self.logging('put_time: %.4f' % (t2-t1))
@@ -122,7 +130,7 @@ class CAS_Interlayer():
         index = rpyc.classic.obtain(index)
         global_tune_tag = index[-1:]
         index = index[:-1].cuda() if CUDA else index[:-1]
-        self.param_sync_period[index] //= 2
+        self.param_sync_period[index] //= self.divisor
         if global_tune_tag == 1:
             self.tune_global_period()
 
@@ -140,8 +148,9 @@ class CAS_Interlayer():
     def tune_global_period(self):
         mask = (self.param_sync_period == self.global_period)
         self.logging('tune global period')
-        self.global_period //= 2
-        self.param_sync_period[mask] //= 2
+        self.global_period //= self.divisor
+        self.param_sync_period[mask] //= self.divisor
+        self.tune_times *= self.divisor
 
     def restore_model_from_tensor_received(self):
         """"""
@@ -172,11 +181,11 @@ class CAS_Manager():
         t2 = time.time()
         self.logging('generate_time: %.4f' % (t2-t1))
         self.sync_round_id += 1
-        if (self.sync_round_id-self.transmit_interlayer.last_update_round) == (self.init_period//self.transmit_interlayer.global_period):
-            t1 = time.time()
-            self.transmit_interlayer.update_period()
-            t2 = time.time()
-            self.logging('update_period_time: %.4f' % (t2-t1))
-            self.transmit_interlayer.last_update_round = self.sync_round_id
+        # if (self.sync_round_id-self.transmit_interlayer.last_update_round) == (self.transmit_interlayer.tune_times):
+        t1 = time.time()
+        self.transmit_interlayer.update_period()
+        t2 = time.time()
+        self.logging('update_period_time: %.4f' % (t2-t1))
+        self.transmit_interlayer.last_update_round = self.sync_round_id
         self.transmit_interlayer.restore_model_from_tensor_received()
         return True
