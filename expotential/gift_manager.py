@@ -95,6 +95,7 @@ class GIFT_Manager():
         rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG
         rpyc_config['allow_pickle'] = True
         self.connection = rpyc.connect(sync_profile['server_ip'], sync_profile['server_port'], config=rpyc_config)
+        self.connection._config['sync_request_timeout']=120
 
         self.sync_init_model()
 
@@ -117,7 +118,7 @@ class GIFT_Manager():
         tensor_to_restore = rpyc.classic.obtain(tensor_to_restore).cuda() if CUDA else rpyc.classic.obtain(tensor_to_restore)
         self.transmit_interlayer.restore_model_from_tensor_received(tensor_to_restore)
 
-    def try_sync_model(self, iter_id):
+    def try_sync_model(self, iter_id, loss_list):
         """ Conduct remote synchronization. """
         t1 = time.time()
         flattened_tensor_to_transmit = self.transmit_interlayer.generate_flattened_tensor_to_transmit(iter_id)

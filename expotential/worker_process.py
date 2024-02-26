@@ -12,10 +12,15 @@ from dataset_manager import Dataset_Manager
 from sync_manager import Sync_Manager
 from cas_manager import CAS_Manager
 from gift_manager import GIFT_Manager
+from adacomm_manager import AdaComm_Manager
+from fedlama_manager import FedLAMA_Manager
 
+torch.set_num_threads(2)
 torch.set_printoptions(precision=20)
 CUDA = torch.cuda.is_available()
 print("CUDA: ",CUDA)
+
+
 
 class Client():
     def __init__(self, local_profile, sync_prefile):
@@ -41,6 +46,10 @@ class Client():
             self.sync_manager = CAS_Manager(self.model, sync_prefile)
         elif sync_profile['interlayer_type'] == 'GIFT':
             self.sync_manager = GIFT_Manager(self.model, sync_prefile)
+        elif sync_profile['interlayer_type'] == 'AdaComm':
+            self.sync_manager = AdaComm_Manager(self.model, sync_prefile)
+        elif sync_profile['interlayer_type'] == 'FedLAMA':
+            self.sync_manager = FedLAMA_Manager(self.model, sync_prefile)
         else:
             self.sync_manager = Sync_Manager(self.model, sync_prefile)
 
@@ -70,10 +79,10 @@ class Client():
         accuracy = positive_test_number / total_test_number
         return accuracy
 
-
     def train(self):
         print('\n\n\t-------- START TRAINING --------\n')
         iter_id, round_id, epoch_id = 0, 0, 0
+        loss_list = []
         while epoch_id < self.max_epoch:
             # print(next(self.model.parameters()).device)
             epoch_id += 1
@@ -85,22 +94,53 @@ class Client():
                     b_y = b_y.cuda()
                 self.optimizer.zero_grad()
                 # t1 = time.time()
-                self.loss_func(self.model(b_x), b_y).backward()
+                loss = self.loss_func(self.model(b_x), b_y)
+                loss_list.append(float(loss))
+                loss.backward()
                 self.optimizer.step()
                 t2 = time.time()
                 # self.logging('training_time: %.4f' % (t2-t1))
                 # self.logging('finish local iteration: %d' % iter_id)
-                if self.sync_manager.try_sync_model(iter_id):
+                if self.sync_manager.try_sync_model(iter_id, loss_list):
                     t3 = time.time()
                     self.logging('try_sync_time: %.4f' % (t3-t2))
+                    loss_list = []
                     round_id += 1
-                    # if iter_id % max(self.init_period, 64) == 0 and self.rank == 1:
-                    #     t1 = time.time()
-                    #     accuracy = self.test()
-                    #     t2 = time.time()
-                    #     self.logging('test_time: %.4f' % (t2-t1))
-                    #     self.logging(' - test - iter_id: %d; epoch_id: %d, round_id: %d; accuracy: %.4f;' % (iter_id, epoch_id, self.sync_manager.sync_round_id, accuracy))
-                        # self.model_manager.save_model(self.sync_manager.sync_round_id)
+            self.logging('finish epoch: %d\n' % epoch_id)
+
+    def fedporx_train(self):
+        print('\n\n\t-------- START TRAINING --------\n')
+        iter_id, round_id, epoch_id = 0, 0, 0
+        loss_list = []
+        global_model = copy.deepcopy(self.model)
+        while epoch_id < self.max_epoch:
+            epoch_id += 1
+            self.logging('start epoch: %d' % epoch_id)
+            for step, (b_x, b_y) in enumerate(self.training_dataloader):
+                iter_id += 1
+                if CUDA:
+                    b_x = b_x.cuda()
+                    b_y = b_y.cuda()
+                self.optimizer.zero_grad()
+
+                # fedprox
+                proximal_term = 0.0
+                for w, w_t in zip(self.model.parameters(), global_model.parameters()):
+                    proximal_term += (w - w_t).norm(2)
+                
+                loss = self.loss_func(self.model(b_x), b_y) + (0.1/2) * proximal_term
+                # self.logging(f"loss: {loss:.2f}, prox term: {proximal_term:.2f}")
+                loss_list.append(loss.item())
+                
+                loss.backward()
+                self.optimizer.step()
+                t2 = time.time()
+                if self.sync_manager.try_sync_model(iter_id, loss_list):
+                    t3 = time.time()
+                    self.logging('try_sync_time: %.4f' % (t3-t2))
+                    loss_list = []
+                    global_model = copy.deepcopy(self.model)
+                    round_id += 1
             self.logging('finish epoch: %d\n' % epoch_id)
 
 
@@ -162,6 +202,9 @@ if __name__ == '__main__':
 
     """ Launch Training """
     client = Client(local_profile, sync_profile)
-    client.train()
+    if args.interlayer_type == 'FedProx':
+        client.fedporx_train()
+    else:
+        client.train()
 
 

@@ -146,3 +146,10 @@ class Model_Manager():
         else:
             torch.save(state, "./NPY/" + checkpoint_name)
             self.logging('save model to: NPY/' + checkpoint_name)
+            
+    def get_flattened_parameter_tensor(self) -> torch.Tensor:
+        tensor_of_flattened_params = torch.tensor([]).cuda() if CUDA else torch.tensor([])
+        for p in self.model.parameters():
+            flattened_param = p.data.view(-1)
+            tensor_of_flattened_params = torch.cat((tensor_of_flattened_params, flattened_param),0)
+        return tensor_of_flattened_params

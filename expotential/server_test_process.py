@@ -12,6 +12,7 @@ sys.path.append(path+'/..')
 from model_manager import Model_Manager
 from dataset_manager import Dataset_Manager
 
+torch.set_num_threads(4)
 torch.set_printoptions(precision=4)
 CUDA = torch.cuda.is_available()
 print("CUDA: ",CUDA)
@@ -100,7 +101,7 @@ if __name__ == "__main__":
             'is_iid' : False,
             'world_size' : 100,
             'partition_rank' : 0,
-            'batch_size' : 1024,
+            'batch_size' : 256,
             'dirichlet_alpha' : 1
         }
     } 

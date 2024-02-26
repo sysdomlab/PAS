@@ -24,13 +24,14 @@ class CAS_Interlayer():
         self.sync_params_volume = 0
         self.last_update_round = 0
         self.tune_times = int(1)
-        self.divisor = 4
+        self.divisor = 2
 
         self.tensor_of_flattened_params = None
         self.freezing_tensor_of_flattened_params = None
         self.received_tensor = None
         self.param_shape_list = []
         self.cutoff_index_list = []
+        self.t_round_start = 0
 
         ''' connect to the FL server '''
         rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG
@@ -53,7 +54,7 @@ class CAS_Interlayer():
         temp_period = init_period
         while temp_period >= 1:
             self.period_list.append(temp_period)
-            temp_period //= self.divisor
+            temp_period = int(temp_period/self.divisor)
         self.logging('-- Expotential CAS ')
 
 
@@ -92,8 +93,8 @@ class CAS_Interlayer():
             self.round_id += 1
         if round_iter not in self.period_list:
             return 0
-        if len(self.freezing_mask.nonzero()) != 0:
-            self.freezing()
+        # if len(self.freezing_mask.nonzero()) != 0:
+        #     self.freezing()
         self.tensor_of_flattened_params = torch.tensor([]).cuda() if CUDA else torch.tensor([])
         self.mask = (self.param_sync_period == round_iter).cuda() if CUDA else (self.param_sync_period == round_iter)
         length = len(self.mask.nonzero())
@@ -118,8 +119,11 @@ class CAS_Interlayer():
         t2 = time.time()
         self.logging('put_time: %.4f' % (t2-t1))
         if round_iter == self.global_period:
+            t_round_end = time.time()
+            # self.logging('round_computation_time=%.4f' % (t_round_end-self.t_round_start))
             received_tensor = self.connection.root.get_restore_tensor()
             self.received_tensor = rpyc.classic.obtain(received_tensor).cuda() if CUDA else rpyc.classic.obtain(received_tensor)
+            self.t_round_start = time.time()
             return 1
         else:
             return 0
@@ -130,7 +134,7 @@ class CAS_Interlayer():
         index = rpyc.classic.obtain(index)
         global_tune_tag = index[-1:]
         index = index[:-1].cuda() if CUDA else index[:-1]
-        self.param_sync_period[index] //= self.divisor
+        self.param_sync_period[index] = (self.param_sync_period[index]/self.divisor).type(torch.int32)
         if global_tune_tag == 1:
             self.tune_global_period()
 
@@ -148,9 +152,8 @@ class CAS_Interlayer():
     def tune_global_period(self):
         mask = (self.param_sync_period == self.global_period)
         self.logging('tune global period')
-        self.global_period //= self.divisor
-        self.param_sync_period[mask] //= self.divisor
-        self.tune_times *= self.divisor
+        self.global_period = int(self.global_period/self.divisor)
+        self.param_sync_period[mask] = (self.param_sync_period[mask]/self.divisor).type(torch.int32)
 
     def restore_model_from_tensor_received(self):
         """"""
@@ -173,7 +176,7 @@ class CAS_Manager():
         sys.stdout.flush()
         
 
-    def try_sync_model(self, iter_id):
+    def try_sync_model(self, iter_id, loss_list):
         """ Conduct remote synchronization. """
         t1 = time.time()
         if self.transmit_interlayer.generate_flattened_tensor_to_transmit(iter_id) == 0:

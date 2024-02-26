@@ -108,12 +108,33 @@ class Dataset_Manager():
 
 
     def get_dirichlet(self):
-        composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size)
+        composition_ratio = np.random.dirichlet(tuple(self.dirichlet_alpha/self.class_num for _ in range(self.class_num)), self.world_size)
         # if self.partition_rank == 0:
         #     self.logging(np.argmax(np.random.dirichlet(tuple(self.dirichlet_alpha for _ in range(self.class_num)), self.world_size),axis=1))
         return (composition_ratio*self.local_size).astype(int)
 
-    def get_index_partition(self):
+    # def get_index_partition(self): 
+    #     ''' dirichelet random sampling '''
+    #     local_idxs = []
+    #     self.set_seed(0)
+    #     labels = np.array(self.training_dataset.targets)
+    #     sorted_idxs = np.argsort(labels)
+    #     composition = self.get_dirichlet()
+    #     composition = composition[self.partition_rank]
+    #     self.logging(composition)
+    #     # print('local dataset composition: ' + str(composition))
+    #     class_pool_size = int(len(self.training_dataset) / self.class_num)
+    #     self.set_seed(self.partition_rank)
+    #     for i in range(len(composition)):
+    #         for j in range(composition[i]):
+    #             sample_index = sorted_idxs[int(class_pool_size*random.random()) + class_pool_size*i] # randomly sampling
+    #             # sample_index = sorted_idxs[(class_pool_size/self.world_size*self.rank+j) % class_pool_size + class_pool_size*i]
+    #             local_idxs.append(sample_index)
+    #     self.set_seed(0)
+    #     return local_idxs
+
+    def get_index_partition(self): 
+        ''' dirichelet without overlap '''
         local_idxs = np.array([]).astype(int)
         self.set_seed(0)
         labels = np.array(self.training_dataset.targets)
@@ -162,15 +183,21 @@ class Dataset_Manager():
     #         each_part_size = len(self.training_dataset) // self.world_size
     #         return idxs[each_part_size*self.partition_rank : each_part_size*(self.partition_rank+1)]
 
+    def get_iid_index_partition(self):
+        labels = np.array(self.training_dataset.targets) #pytorch老版本train_labels，新版本targets
+        idxs = np.argsort(labels)
+        np.random.shuffle(idxs)
+        each_part_size = len(self.training_dataset) // self.world_size
+        return idxs[each_part_size*self.partition_rank : each_part_size*(self.partition_rank+1)]
+
 
     def get_training_dataloader(self):
         if self.is_iid:
-            self.set_seed(self.partition_rank)
-            training_dataloader = DataLoader(self.training_dataset, 
+            self.set_seed(0)
+            index_partition = self.get_iid_index_partition()
+            training_dataloader = DataLoader(DatasetSplit(self.training_dataset, index_partition), 
                                             batch_size=self.batch_size, 
-                                            shuffle=True, 
-                                            num_workers=self.world_size, 
-                                            pin_memory=True)
+                                            shuffle=True)
         else:
             self.set_seed(0)
             index_partition = self.get_index_partition()
