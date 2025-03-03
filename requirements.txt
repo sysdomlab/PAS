@@ -1,3 +1,6 @@
 numpy
-torch == 1.11
+torch == 1.13
 torchsummary
+pytorchcv
+rpyc
+tqdm

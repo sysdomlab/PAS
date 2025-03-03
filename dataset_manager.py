@@ -1,16 +1,15 @@
 import torch
 import numpy as np
-import pandas as pd
 from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets, transforms
 import random, datetime, sys, pprint, time
-from transformers import BertTokenizer
-from datasets import load_dataset
+# from transformers import BertTokenizer
+# from datasets import load_dataset
 
 
 np.set_printoptions(4)
 
-DATASET_PATH = "/home/zgan/Datasets/"
+DATASET_PATH = "./"
 
 
 class DatasetSplit(Dataset):

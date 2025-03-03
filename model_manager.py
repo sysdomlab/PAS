@@ -1,7 +1,7 @@
 import torch
 from typing import Tuple, List
 from models import CNN, LSTM, ResNet, VGG, AlexNet, DenseNet, LogisticRegression, MobileNetV2, GhostNet, Ghost_ResNet56
-from transformers import BertForSequenceClassification, ViTForImageClassification
+# from transformers import BertForSequenceClassification, ViTForImageClassification
 import os, datetime, sys, pprint
 import random
 import numpy as np

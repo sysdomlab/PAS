@@ -222,6 +222,7 @@ class CASAPF_Interlayer(CAS_Interlayer):
         self.received_tensor = rpyc.classic.obtain(tensor_to_restore).cuda() if CUDA else rpyc.classic.obtain(tensor_to_restore)
         self.model_manager.restore_model_with_tensor(self.received_tensor)
         self.flattened_params_length = len(self.tensor_of_flattened_params)
+        self.tensor_of_flattened_params = self.received_tensor
         self.logging("Param_length: "+str(self.flattened_params_length))
 
     def generate_flattened_tensor_to_transmit(self, iter_id):

@@ -39,7 +39,7 @@ class TestService(Service):
         # t1 = time.time()
         testing_thread = Thread(target=test_thread, args=(round_id, tensor_to_restore,))
         testing_thread.start()
-        testing_thread.join()
+        # testing_thread.join()
         # t2 = time.time()
         # self.logging("start_testing_thread: %.4f" % (t2-t1))
         
