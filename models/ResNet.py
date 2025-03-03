@@ -4,6 +4,11 @@ import torch.nn.functional as F
 import torchsummary
 import copy
 from pytorchcv.model_provider import get_model as ptcv_get_model
+from torchvision import datasets, transforms
+import torch.optim as optim
+from tqdm import tqdm
+from torch.utils.data import DataLoader
+
 
 class ResidualBlock(nn.Module):
     def __init__(self, inchannel, outchannel, stride=1, size=[]):
@@ -125,7 +130,79 @@ def ResNet18_Cifar10():
 
 if __name__ == '__main__':
     model = ResNet20_Cifar10()
-    torchsummary.summary(model,(3,32,32))
-    input = torch.ones([1,3,32,32]).cuda()
-    output = model(input)
-    print(output.size())
+    
+    batch_size = 32
+    num_epochs = 20
+    learning_rate = 0.1
+    device = torch.device('cuda:1')
+    
+    train_dataset = datasets.CIFAR10(root='/home/zgan/Datasets/Cifar10', train=True, download=True, transform=transforms.ToTensor())
+    test_dataset = datasets.CIFAR10(root='/home/zgan/Datasets/Cifar10', train=False, download=True, transform=transforms.ToTensor())
+    
+    train_loader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True)
+    test_loader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False)
+    
+    criterion = nn.CrossEntropyLoss()
+    optimizer = optim.SGD(model.parameters(), lr=learning_rate)
+    
+    model.to(device)
+    
+    # 微调ViT模型
+    for epoch in range(num_epochs):
+        print("epoch:",epoch)
+        model.train()
+        train_loss = 0.0
+        train_correct = 0
+    
+        bar = tqdm(train_loader, desc="Train")
+        for images, labels in bar:
+            images = images.to(device)
+            labels = labels.to(device)
+    
+            # 前向传播
+            outputs = model(images)
+            loss = criterion(outputs, labels)
+    
+            # 反向传播和优化
+            optimizer.zero_grad()
+            loss.backward()
+            optimizer.step()
+    
+            train_loss += loss.item()
+            _, predicted = torch.max(outputs, 1)
+            train_correct += (predicted == labels).sum().item()
+    
+        # 在训练集上计算准确率
+        train_accuracy = 100.0 * train_correct / len(train_dataset)
+    
+        # 在测试集上进行评估
+        model.eval()
+        test_loss = 0.0
+        test_correct = 0
+    
+        with torch.no_grad():
+            bar = tqdm(test_loader, desc="Test")
+            for images, labels in bar:
+                images = images.to(device)
+                labels = labels.to(device)
+    
+                outputs = model(images)
+                loss = criterion(outputs, labels)
+    
+                test_loss += loss.item()
+                _, predicted = torch.max(outputs, 1)
+                test_correct += (predicted == labels).sum().item()
+    
+        # 在测试集上计算准确率
+        test_accuracy = 100.0 * test_correct / len(test_dataset)
+    
+        # 打印每个epoch的训练损失、训练准确率和测试准确率
+        print(f'Epoch [{epoch+1}/{num_epochs}], '
+              f'Train Loss: {train_loss:.4f}, '
+              f'Train Accuracy: {train_accuracy:.2f}%, '
+              f'Test Loss: {test_loss:.4f}, '
+              f'Test Accuracy: {test_accuracy:.2f}%')
+    
+    
+    
+    

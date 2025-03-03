@@ -6,27 +6,23 @@ try:
 except ImportError:
     import torch.distributed as dist
 
+path=os.path.dirname(__file__)
+sys.path.append(path+'/../..')
+from model_manager import Model_Manager
 
 CUDA = torch.cuda.is_available()
 
 
 class FedLAMA_Interlayer:
-    def __init__(self, model, init_period):
-        self.model = model
-        self.init_period = init_period
+    def __init__(self, model_manager: Model_Manager, init_period):
+        self.model_manager = model_manager
+        self.model = model_manager.model
         self.interlayer_type = 'FedLAMA'
 
-        self.param_shape_list = []
-        self.cutoff_index_list = []
-
-        start_index = 0
         layer_num = 0
         for param in self.model.parameters():
-            self.param_shape_list.append(param.data.shape)
-            end_index = start_index + len(param.data.view(-1))
-            self.cutoff_index_list.append([start_index, end_index])
-            start_index = end_index
-            layer_num += 1
+            if param.requires_grad:
+                layer_num += 1
 
         self.layer_num = layer_num
         self.next_sync_iter_l = [init_period] * layer_num
@@ -42,27 +38,34 @@ class FedLAMA_Interlayer:
             if iter_id == self.next_sync_iter_l[layer_id]:
                 layer_list_to_transmit.append(layer_id)
         if layer_list_to_transmit == []:
-            return [], []        
-        for i, param in enumerate(self.model.parameters()):
-            if i in layer_list_to_transmit:
-                tensor_list_to_transmit.append(param.data)
+            return [], []      
+        i = 0  
+        for param in self.model.parameters():
+            if param.requires_grad:
+                if i in layer_list_to_transmit:
+                    tensor_list_to_transmit.append(param.data)
+                i += 1
+
         return layer_list_to_transmit, tensor_list_to_transmit
     
     def restore_model_from_tensor_list_received(self, tensor_list_received, layer_list_received):
-        for i, param in enumerate(self.model.parameters()):
-            if i in layer_list_received:
-                param.data = tensor_list_received[layer_list_received.index(i)]
+        i = 0
+        for param in self.model.parameters():
+            if param.requires_grad:
+                if i in layer_list_received:
+                    param.data = tensor_list_received[layer_list_received.index(i)]
+                i += 1
                 
 
 class FedLAMA_Manager():
     """ This object shall be able to run without GIFT (support standard FL by default)"""
-    def __init__(self, model, sync_profile) -> None:
-        self.model = model
+    def __init__(self, model_manager: Model_Manager, sync_profile) -> None:
+        self.model_manager = model_manager
         self.sync_round_id = 0
         self.rank = sync_profile['rank']
         self.init_period = sync_profile['init_period']
         self.interlayer_type = sync_profile['interlayer_type']
-        self.transmit_interlayer = FedLAMA_Interlayer(self.model, self.init_period)
+        self.transmit_interlayer = FedLAMA_Interlayer(self.model_manager, self.init_period)
 
         rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG
         rpyc_config['allow_pickle'] = True
@@ -77,8 +80,9 @@ class FedLAMA_Manager():
 
     def sync_init_model(self):
         tensor_list_to_transmit = []
-        for i, param in enumerate(self.model.parameters()):
-            tensor_list_to_transmit.append(param.data)
+        for i, param in enumerate(self.model_manager.model.parameters()):
+            if param.requires_grad:
+                tensor_list_to_transmit.append(param.data)
         tensor_list_to_transmit = [t.cpu() for t in tensor_list_to_transmit]
         tensor_list_received = self.connection.root.sync_initial_model(self.rank, tensor_list_to_transmit)
         tensor_list_received = rpyc.classic.obtain(tensor_list_received)

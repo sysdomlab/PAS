@@ -38,6 +38,6 @@ class AlexNet_Cifar10(nn.Module):
 
     def forward(self, x):
         x = self.features(x)
-        x = x.view(x.size(0), 256 * 2 * 2)
+        x = x.reshape(x.size(0), 256 * 2 * 2)
         x = self.classifier(x)
         return x

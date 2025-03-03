@@ -1,10 +1,18 @@
 import torch
 import numpy as np
+import pandas as pd
 from torch.utils.data import DataLoader, Dataset
 from torchvision import datasets, transforms
-import random, datetime, sys, pprint
+import random, datetime, sys, pprint, time
+from transformers import BertTokenizer
+from datasets import load_dataset
+
 
 np.set_printoptions(4)
+
+DATASET_PATH = "/home/zgan/Datasets/"
+
+
 class DatasetSplit(Dataset):
     def __init__(self, dataset, idxs):
         self.dataset = dataset
@@ -15,6 +23,7 @@ class DatasetSplit(Dataset):
 
     def __getitem__(self, item):
         return self.dataset[self.idxs[item]]
+
 
 class KWSconstructor(Dataset):
     def __init__(self, root, transform=None) -> None:
@@ -40,6 +49,56 @@ class KWSconstructor(Dataset):
 
     def __len__(self):
         return len(self.data)
+    
+
+class Bert20NewsDataset(Dataset):
+    def __init__(self, dataset, tokenizer) -> None:
+        super().__init__()
+        self.datas = dataset['text']
+        self.tokenizer = tokenizer
+        self.targets = [label for label in dataset['label']]
+    
+    def __getitem__(self, index):
+        inputs = self.tokenizer(self.datas[index], truncation=True, padding='max_length', max_length=512, return_tensors='pt')
+
+        return inputs, self.targets[index]
+
+    def __len__(self):
+        return len(self.datas)
+    
+
+class BertSstDataset(Dataset):
+    def __init__(self, dataset, tokenizer) -> None:
+        super().__init__()
+        self.datas = dataset['sentence']
+        self.tokenizer = tokenizer
+        self.targets = [label for label in dataset['label']]
+    
+    def __getitem__(self, index):
+        inputs = self.tokenizer(self.datas[index], truncation=True, padding='max_length', max_length=512, return_tensors='pt')
+
+        return inputs, self.targets[index]
+
+    def __len__(self):
+        return len(self.datas)
+    
+
+class BertImdbDataset(Dataset):
+    def __init__(self, dataset, tokenizer) -> None:
+        super().__init__()
+        self.datas = dataset['text']
+        self.tokenizer = tokenizer
+        self.targets = [label for label in dataset['label']]
+    
+    def __getitem__(self, index):
+        inputs = self.tokenizer(self.datas[index], truncation=True, padding='max_length', max_length=512, return_tensors='pt')
+
+        return inputs, self.targets[index]
+
+    def __len__(self):
+        return len(self.datas)
+
+
 
 class Dataset_Manager():
     def __init__(self, dataset_profile): # (dataset_name, is_iid, total_partition_number, partition_rank)
@@ -50,11 +109,9 @@ class Dataset_Manager():
             self.dirichlet_alpha = dataset_profile['dirichlet_alpha']
 
             self.transform_to_224=transforms.Compose([
-                        transforms.RandomResizedCrop(224),
-                        transforms.RandomHorizontalFlip(),
-                        transforms.ToTensor(),
-                        transforms.Normalize((0.485,0.456,0.406),(0.229,0.224,0.225))
-                    ])
+                transforms.Resize((224, 224)),
+                transforms.ToTensor(),
+            ])
 
             self.batch_size = dataset_profile['batch_size']
             self.training_dataset, self.testing_dataset, self.class_num = self.get_dataset()
@@ -71,29 +128,58 @@ class Dataset_Manager():
 
     def get_dataset(self):
         if self.dataset_name == 'Mnist':
-            train_dataset = datasets.MNIST(root='./Datasets/Mnist', train=True, download=True, transform=transforms.ToTensor())
-            test_dataset = datasets.MNIST(root='./Datasets/Mnist', train=False, transform=transforms.ToTensor())
+            train_dataset = datasets.MNIST(root=f'{DATASET_PATH}/Mnist', train=True, download=True, transform=transforms.ToTensor())
+            test_dataset = datasets.MNIST(root=f'{DATASET_PATH}/Mnist', train=False, transform=transforms.ToTensor())
             class_num = 10
         if self.dataset_name == 'EMnist':
-            train_dataset = datasets.EMNIST(root='./Datasets/EMnist', split='balanced',train=True, download=True, transform=transforms.ToTensor())
-            test_dataset = datasets.EMNIST(root='./Datasets/EMnist', split="balanced",train=False, transform=transforms.ToTensor())
+            train_dataset = datasets.EMNIST(root=f'{DATASET_PATH}/EMnist', split='balanced',train=True, download=True, transform=transforms.ToTensor())
+            test_dataset = datasets.EMNIST(root=f'{DATASET_PATH}/EMnist', split="balanced",train=False, transform=transforms.ToTensor())
             class_num = 47
         if self.dataset_name == 'FashionMnist':
-            train_dataset = datasets.FashionMNIST(root='./Datasets/FashionMnist', train=True, download=True, transform=transforms.ToTensor())
-            test_dataset = datasets.FashionMNIST(root='./Datasets/FashionMnist', train=False, transform=transforms.ToTensor())
+            train_dataset = datasets.FashionMNIST(root=f'{DATASET_PATH}/FashionMnist', train=True, download=True, transform=transforms.ToTensor())
+            test_dataset = datasets.FashionMNIST(root=f'{DATASET_PATH}/FashionMnist', train=False, transform=transforms.ToTensor())
             class_num = 10
         if self.dataset_name == 'Cifar10':
-            train_dataset = datasets.CIFAR10(root='./Datasets/Cifar10', train=True, download=True, transform=transforms.ToTensor())
-            test_dataset = datasets.CIFAR10(root='./Datasets/Cifar10', train=False, transform=transforms.ToTensor())
+            train_dataset = datasets.CIFAR10(root=f'{DATASET_PATH}/Cifar10', train=True, download=True, transform=transforms.ToTensor())
+            test_dataset = datasets.CIFAR10(root=f'{DATASET_PATH}/Cifar10', train=False, transform=transforms.ToTensor())
             class_num = 10
         if self.dataset_name == 'KWS':
-            train_dataset = KWSconstructor(root='./kws/index_train.txt', transform=None)
-            test_dataset = KWSconstructor(root='./kws/index_test.txt', transform=None)
+            train_dataset = KWSconstructor(root=f'./kws/index_train.txt', transform=None)
+            test_dataset = KWSconstructor(root=f'./kws/index_test.txt', transform=None)
             class_num = 10
         if self.dataset_name == 'Cifar10_224':
-            train_dataset = datasets.CIFAR10(root='./Datasets/Cifar10_224', train=True, download=True, transform=self.transform_to_224)
-            test_dataset = datasets.CIFAR10(root='./Datasets/Cifar10_224', train=False, transform=self.transform_to_224)
+            train_dataset = datasets.CIFAR10(root=f'{DATASET_PATH}/Cifar10', train=True, download=True, transform=self.transform_to_224)
+            test_dataset = datasets.CIFAR10(root=f'{DATASET_PATH}/Cifar10', train=False, transform=self.transform_to_224)
             class_num = 10
+            self.batch_size = 16
+        if self.dataset_name == '20News':
+            dataset_path = "/home/zgan/Datasets/PsyMatrix/cls_20newsgroups_SubjectTextVsLabel__BaseDefault"
+            model_path = "/home/zgan/Models/google/bert_uncased_L-2_H-128_A-2"
+            tokenizer: BertTokenizer = BertTokenizer.from_pretrained(model_path)
+            train_dataset = Bert20NewsDataset(load_dataset(dataset_path, split="train"), tokenizer)
+            test_dataset = Bert20NewsDataset(load_dataset(dataset_path, split="test"), tokenizer)
+            self.batch_size = 32
+            class_num = 20
+        if self.dataset_name == 'sst2':
+            dataset_path = "/home/zgan/Datasets/stanfordnlp/sst2"
+            model_path = "/home/zgan/Models/google/bert_uncased_L-2_H-128_A-2"
+            tokenizer: BertTokenizer = BertTokenizer.from_pretrained(model_path)
+            train_dataset = BertSstDataset(load_dataset(dataset_path, split="train"), tokenizer)
+            test_dataset = BertSstDataset(load_dataset(dataset_path, split="validation"), tokenizer)
+            self.batch_size = 16
+            class_num = 2
+        if self.dataset_name == 'imdb':
+            dataset_path = "/home/zgan/Datasets/stanfordnlp/imdb"
+            model_path = "/home/zgan/Models/google/bert_uncased_L-2_H-128_A-2"
+            tokenizer: BertTokenizer = BertTokenizer.from_pretrained(model_path)
+            dataset = load_dataset(dataset_path, split="train")
+            dataset = dataset.shuffle(0)
+            dataset_size = len(dataset_size)
+            train_size = int(dataset_size * 0.8)
+            train_dataset = BertImdbDataset(dataset[:train_size], tokenizer)
+            test_dataset = BertImdbDataset(dataset[train_size:], tokenizer)
+            self.batch_size = 16
+            class_num = 2
         return train_dataset, test_dataset, class_num
 
     
@@ -212,3 +298,7 @@ class Dataset_Manager():
                                         batch_size=self.batch_size,
                                         shuffle=True)
         return testing_dataloader
+
+
+if __name__ == "__main__":
+    pass

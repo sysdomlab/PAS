@@ -6,14 +6,18 @@ try:
 except ImportError:
     import torch.distributed as dist
 
+path=os.path.dirname(__file__)
+sys.path.append(path+'/../..')
+from model_manager import Model_Manager
 
 CUDA = torch.cuda.is_available()
               
 
 class AdaComm_Interlayer():
-    def __init__(self, model, rank, init_period) -> None:
+    def __init__(self, model_manager: Model_Manager, rank, init_period) -> None:
         self.interlayers_type = 'AdaComm'
-        self.model = model
+        self.model_manager = model_manager
+        self.model = model_manager.model
         self.round = 0
         self.rank = rank
         self.init_period = init_period
@@ -28,20 +32,12 @@ class AdaComm_Interlayer():
         self.logging('create AdaComm Interlayer')
 
     def init_model_structure_related_variables(self):
-        s_index = 0
-        self.tensor_of_flattened_params = torch.tensor([]).cuda() if CUDA else torch.tensor([])
-        for param in self.model.parameters():
-            self.param_shape_list.append(param.data.shape)
-            flatten_params = param.data.view(-1)
-            e_index = s_index + len(flatten_params)
-            self.cutoff_index_list.append([s_index, e_index])
-            s_index = e_index
-            self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flatten_params),0)
+        self.tensor_of_flattened_params = self.model_manager.get_flattened_parameter_tensor()
         self.flattened_params_length = len(self.tensor_of_flattened_params)
         self.logging("Param_length: "+str(self.flattened_params_length))
 
     def logging(self, string, hyperparameters=None):
-        print('['+str(datetime.datetime.now())+'] [Sync_Manager] [Default_Interlayer] '+str(string))
+        print('['+str(datetime.datetime.now())+'] [Sync_Manager] [AdaComm_Interlayer] '+str(string))
         if hyperparameters != None:
             pprint.pprint(hyperparameters)
         sys.stdout.flush()
@@ -53,18 +49,10 @@ class AdaComm_Interlayer():
         # self.model = self.model.cpu() if CUDA else self.model # "tcp" can support gpu
         self.round += 1
         self.last_sync_iter = iter_id
-        self.tensor_of_flattened_params = torch.tensor([]).cuda() if CUDA else torch.tensor([])
-        for p in self.model.parameters():
-            flattened_param = p.data.view(-1)
-            self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flattened_param),0)
+        self.tensor_of_flattened_params = self.model_manager.get_flattened_parameter_tensor()
         self.sum_num_of_param += self.flattened_params_length/1000000
         if self.round % int(self.init_period//self.current_period) == 0: self.logging('iter_id: %d; round: %d; sum_num_of_param: %.4f' % (iter_id, self.round, self.sum_num_of_param))
         return self.tensor_of_flattened_params
-
-    def restore_model_from_tensor_received(self, tensor_received):
-        """"""
-        for i, param in enumerate(self.model.parameters()):
-            param.data = tensor_received[self.cutoff_index_list[i][0]:self.cutoff_index_list[i][1]].view(self.param_shape_list[i])
 
     def update_period(self, new_period):
         self.logging(f"new period: {new_period:d}")
@@ -72,13 +60,13 @@ class AdaComm_Interlayer():
 
 
 class AdaComm_Manager():
-    def __init__(self, model, sync_profile) -> None:
-        self.model = model
+    def __init__(self, model_manager: Model_Manager, sync_profile) -> None:
+        self.model_manager = model_manager
         self.sync_round_id = 0
         self.rank = sync_profile['rank']
         self.init_period = sync_profile['init_period']
         self.interlayer_type = sync_profile['interlayer_type']
-        self.transmit_interlayer = self.create_transmit_interlayer(sync_profile['interlayer_type'])
+        self.transmit_interlayer = AdaComm_Interlayer(self.model_manager, self.rank, self.init_period)
 
         rpyc_config = rpyc.core.protocol.DEFAULT_CONFIG
         rpyc_config['allow_pickle'] = True
@@ -91,20 +79,12 @@ class AdaComm_Manager():
         print('['+str(datetime.datetime.now())+'] [Sync Manager] '+str(string))
         sys.stdout.flush()
 
-    def create_transmit_interlayer(self, interlayer_type):
-        # self.model = self.model.cpu() if CUDA else self.model # "tcp" can support gpu
-        transmit_interlayer = AdaComm_Interlayer(self.model, self.rank, self.init_period)
-        return transmit_interlayer
-
     def sync_init_model(self):
-        self.tensor_of_flattened_params = torch.tensor([]).cuda() if CUDA else torch.tensor([])
-        for p in self.model.parameters():
-            flattened_param = p.data.view(-1)
-            self.tensor_of_flattened_params = torch.cat((self.tensor_of_flattened_params, flattened_param),0)
-        if CUDA: self.tensor_of_flattened_params = self.tensor_of_flattened_params.cpu()
+        self.model_manager.get_param_shape()
+        self.tensor_of_flattened_params = self.model_manager.get_flattened_parameter_tensor().cpu()
         tensor_to_restore = self.connection.root.sync_initial_model(self.rank, self.tensor_of_flattened_params)
         tensor_to_restore = rpyc.classic.obtain(tensor_to_restore).cuda() if CUDA else rpyc.classic.obtain(tensor_to_restore)
-        self.transmit_interlayer.restore_model_from_tensor_received(tensor_to_restore)
+        self.model_manager.restore_model_with_tensor(tensor_to_restore)
 
     def try_sync_model(self, iter_id, loss_list):
         """ Conduct remote synchronization. """
@@ -124,6 +104,6 @@ class AdaComm_Manager():
             tensor_received = list_received[0].cuda() if CUDA else list_received[0]
             t3 = time.time()
             self.logging('sync_time: %.4f, obtain_time: %.4f' % (t3-t1,t3-t2))
-            self.transmit_interlayer.restore_model_from_tensor_received(tensor_received)
+            self.model_manager.restore_model_with_tensor(tensor_received)
             return True
         return False

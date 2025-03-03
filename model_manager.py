@@ -1,6 +1,10 @@
 import torch
+from typing import Tuple, List
 from models import CNN, LSTM, ResNet, VGG, AlexNet, DenseNet, LogisticRegression, MobileNetV2, GhostNet, Ghost_ResNet56
+from transformers import BertForSequenceClassification, ViTForImageClassification
 import os, datetime, sys, pprint
+import random
+import numpy as np
 
 CUDA = torch.cuda.is_available()
 
@@ -42,6 +46,14 @@ ModelHyperparameterDict = {
             {'lr':0.1, 'wd':0.0001, 'optimizer': torch.optim.SGD, 'loss_func': torch.nn.CrossEntropyLoss()},
         'Ghost_ResNet56_Cifar10':
             {'lr':0.1, 'wd':0.0001, 'optimizer': torch.optim.SGD, 'loss_func': torch.nn.CrossEntropyLoss()},
+        'Bert_20News':
+            {'lr':0.01, 'wd': 0.01, 'optimizer': torch.optim.SGD, 'loss_func': None},
+        'Bert_sst2':
+            {'lr':1e-4, 'wd': 0.01, 'optimizer': torch.optim.Adam, 'loss_func': None},   
+        'Bert_imdb':
+            {'lr':1e-4, 'wd': 0.01, 'optimizer': torch.optim.Adam, 'loss_func': None},   
+        'Vit_Cifar10_224':
+            {'lr':0.1, 'wd': 0.001, 'optimizer': torch.optim.SGD, 'loss_func': torch.nn.CrossEntropyLoss()},
     }
 
 class Model_Manager():
@@ -53,6 +65,9 @@ class Model_Manager():
         self.optimizer = None
         self.loss_func = None
 
+        self.param_shape_list: List[torch.Size] = []
+        self.cutoff_index_list: List[Tuple[int, int]] = []
+
         self.logging('create model manager', self.hyperparameters) # 
 
     def logging(self, string, hyperparameters=None):
@@ -61,6 +76,15 @@ class Model_Manager():
             pprint.pprint(hyperparameters)
             print
         sys.stdout.flush()
+
+    def set_seed(self, seed):
+        random.seed(seed)
+        np.random.seed(seed)
+        torch.manual_seed(seed)
+        torch.cuda.manual_seed(seed)
+        torch.backends.cudnn.deterministic = True
+        np.random.seed(seed)
+        torch.backends.cudnn.benchmark = False
 
     def get_optimizer(self):
         self.optimizer = self.hyperparameters['optimizer'](self.model.parameters(), 
@@ -114,8 +138,42 @@ class Model_Manager():
             self.model = GhostNet.ghostnet()
         if self.model_name == 'Ghost_ResNet56_Cifar10':
             self.model = Ghost_ResNet56.Ghost_resnet56()
+
+        self.set_seed(0)
+        if self.model_name == 'Vit_Cifar10_224':
+            self.model = ViTForImageClassification.from_pretrained('/home/zgan/Datasets/google/vit-base-patch16-224')
+        
+        if self.model_name == 'Bert_20News':
+            # model_path = "/home/zgan/Models/google-bert/bert-base-uncased"
+            # self.model = BertForSequenceClassification.from_pretrained(
+            #     model_path,
+            #     num_labels=20,
+            #     output_attentions = False,
+            #     output_hidden_states = False,
+            #     )
+            # from peft import LoraConfig, TaskType, get_peft_model
+            # lora_config = LoraConfig(task_type=TaskType.SEQ_CLS, r=8, lora_alpha=4)
+            # self.model = get_peft_model(self.model, lora_config)
+            model_path = "/home/zgan/Models/google/bert_uncased_L-2_H-128_A-2"
+            self.model = BertForSequenceClassification.from_pretrained(
+                model_path,
+                num_labels=20,
+                output_attentions = False,
+                output_hidden_states = False,
+                )
+
+        if self.model_name in ['Bert_sst2', 'Bert_imdb']:
+            model_path = "/home/zgan/Models/google/bert_uncased_L-2_H-128_A-2"
+            self.model = BertForSequenceClassification.from_pretrained(
+                model_path,
+                num_labels=2,
+                output_attentions = False,
+                output_hidden_states = False,
+                )
         
     def try_init_model_from_checkpoint(self, CHECKPOINT_ENABLED):
+        if self.model_name.startswith("Bert") or self.model_name.startswith("Vit"):
+            return
         if CHECKPOINT_ENABLED:
             checkpoint_name = self.model_name + '_checkpoint_0.t7'
             if os.path.exists(checkpoint_name):
@@ -150,6 +208,24 @@ class Model_Manager():
     def get_flattened_parameter_tensor(self) -> torch.Tensor:
         tensor_of_flattened_params = torch.tensor([]).cuda() if CUDA else torch.tensor([])
         for p in self.model.parameters():
-            flattened_param = p.data.view(-1)
-            tensor_of_flattened_params = torch.cat((tensor_of_flattened_params, flattened_param),0)
+            if p.requires_grad:
+                flattened_param = p.data.reshape(-1)
+                tensor_of_flattened_params = torch.cat((tensor_of_flattened_params, flattened_param),0)
         return tensor_of_flattened_params
+    
+    def get_param_shape(self):
+        s_index = 0
+        for param in self.model.parameters():
+            if param.requires_grad:
+                self.param_shape_list.append(param.data.shape)
+                flatten_params = param.data.reshape(-1)
+                e_index = s_index + len(flatten_params)
+                self.cutoff_index_list.append((s_index, e_index))
+                s_index = e_index
+
+    def restore_model_with_tensor(self, received_tensor: torch.Tensor):
+        i = 0
+        for param in self.model.parameters():
+            if param.requires_grad:
+                param.data = received_tensor[self.cutoff_index_list[i][0]:self.cutoff_index_list[i][1]].reshape(self.param_shape_list[i])
+                i += 1

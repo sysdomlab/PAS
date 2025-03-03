@@ -16,9 +16,10 @@ period_queue = queue.Queue(10)
 current_sync_period = 0
 update_index = None
 sync_lock = threading.Lock()
+connection = None
 
-def sync_thread(rank, round_id, tensor_to_transmit, mask, temp_period):
-        global current_sync_period, period_queue, sync_lock
+def sync_thread(rank, round_id, tensor_list_to_transmit, mask, temp_period):
+        global current_sync_period, period_queue, sync_lock, connection
         while current_sync_period != temp_period:
             sync_lock.acquire()
             if current_sync_period == 0: 
@@ -28,20 +29,21 @@ def sync_thread(rank, round_id, tensor_to_transmit, mask, temp_period):
 
         logging('start_sync: %d' % temp_period)
         t1 = time.time()
-        tensor_to_restore = connection.root.aggregate(rank, round_id, tensor_to_transmit, temp_period)
+        tensor_list_to_restore = connection.root.aggregate(rank, round_id, tensor_list_to_transmit, temp_period)
         t2 = time.time()
-        tensor_to_restore = rpyc.classic.obtain(tensor_to_restore)
+        logging("return temp_period: %d, round_id: %d" % (temp_period, round_id))
+        tensor_list_to_restore = rpyc.classic.obtain(tensor_list_to_restore)
         t3 = time.time()
         logging('temp_period %d inner_sync_time: %.4f, obtain_time: %.4f' % (temp_period,t3-t1,t3-t2))
         current_sync_period = 0
         global flattened_tensor_to_restore
-        flattened_tensor_to_restore[mask] = tensor_to_restore
-        temp_len = len(tensor_to_transmit)
+        flattened_tensor_to_restore[mask] = tensor_list_to_restore[0]
+        temp_len = len(tensor_list_to_transmit[0])
         global round_transmit_param_volume
         round_transmit_param_volume += temp_len
 
-def sync_and_update_thread(rank, round_id, tensor_to_transmit, mask, temp_period):
-        global current_sync_period, period_queue, sync_lock
+def sync_and_update_thread(rank, round_id, tensor_list_to_transmit, mask, temp_period):
+        global current_sync_period, period_queue, sync_lock, connection
         while current_sync_period != temp_period:
             sync_lock.acquire()
             if current_sync_period == 0: 
@@ -51,8 +53,9 @@ def sync_and_update_thread(rank, round_id, tensor_to_transmit, mask, temp_period
         
         logging('start_sync: %d' % temp_period)
         t1 = time.time()
-        temp_list = connection.root.aggregate_and_update(rank, round_id, tensor_to_transmit, temp_period)
+        temp_list = connection.root.aggregate_and_update(rank, round_id, tensor_list_to_transmit, temp_period)
         t2 = time.time()
+        logging("return temp_period: %d, round_id: %d" % (temp_period, round_id))
         temp_list = rpyc.classic.obtain(temp_list)
         t3 = time.time()
         logging('temp_period %d inner_sync_time: %.4f, obtain_time: %.4f' % (temp_period ,t3-t1,t3-t2))
@@ -61,7 +64,7 @@ def sync_and_update_thread(rank, round_id, tensor_to_transmit, mask, temp_period
         flattened_tensor_to_restore[mask] = temp_list[0]
         global update_index
         update_index = temp_list[1]
-        temp_len = len(tensor_to_transmit)
+        temp_len = len(tensor_list_to_transmit[0])
         global round_transmit_param_volume
         round_transmit_param_volume += temp_len
 
@@ -82,7 +85,7 @@ class Sync_Service(Service):
         rpyc_config['allow_pickle'] = True
         global connection 
         connection = rpyc.connect(server_ip, server_port, config=rpyc_config)
-        connection._config['sync_request_timeout']=120
+        connection._config['sync_request_timeout']=1200
 
     def logging(self, string):
         print('['+str(datetime.datetime.now())+'] [Sync Process] '+str(string))
@@ -101,42 +104,42 @@ class Sync_Service(Service):
         return tensor_to_restore
 
 
-    def exposed_sync(self, tensor_to_transmit, mask, temp_period):
+    def exposed_sync(self, tensor_list_to_transmit, mask, temp_period):
         global period_queue
         period_queue.put(temp_period)
         # self.logging('sync_start: %d' % temp_period)
         ''' aggregate '''
-        tensor_to_transmit = rpyc.classic.obtain(tensor_to_transmit)
+        tensor_list_to_transmit = rpyc.classic.obtain(tensor_list_to_transmit)
         mask = rpyc.classic.obtain(mask)
         t1 = time.time()
         self.logging('create_sync_thread: %d' % temp_period)
-        temp_sync_thread = threading.Thread(target=sync_thread, args=(self.rank, self.round_id, tensor_to_transmit, mask, temp_period,))
+        temp_sync_thread = threading.Thread(target=sync_thread, args=(self.rank, self.round_id, tensor_list_to_transmit, mask, temp_period,))
         temp_sync_thread.start()
         t2 = time.time()
         self.logging('create_finishing: %.4f' % (t2-t1))
         ''' restore '''
         # flattened_tensor_to_restore[mask] = tensor_to_restore
 
-    def exposed_sync_and_update(self, tensor_to_transmit, mask, temp_period):
+    def exposed_sync_and_update(self, tensor_list_to_transmit, mask, temp_period):
         global period_queue
         period_queue.put(temp_period)
         # self.logging('sync_start: %d' % temp_period)
         ''' aggregate '''
-        tensor_to_transmit = rpyc.classic.obtain(tensor_to_transmit)
+        tensor_list_to_transmit = rpyc.classic.obtain(tensor_list_to_transmit)
         mask = rpyc.classic.obtain(mask)
         t1 = time.time()
         self.logging('create_sync_thread: %d' % temp_period)
-        temp_sync_thread = threading.Thread(target=sync_and_update_thread, args=(self.rank, self.round_id, tensor_to_transmit, mask, temp_period,))
+        temp_sync_thread = threading.Thread(target=sync_and_update_thread, args=(self.rank, self.round_id, tensor_list_to_transmit, mask, temp_period,))
         temp_sync_thread.start()
         t2 = time.time()
         self.logging('create_finishing: %.4f' % (t2-t1))
         ''' restore '''
         # flattened_tensor_to_restore[mask] = tensor_to_restore
 
-    def exposed_get_restore_tensor(self):
+    def exposed_get_restore_tensor(self, num_active_params):
         self.logging('get_restore_start')
         global round_transmit_param_volume
-        while round_transmit_param_volume != self.flattened_params_length:
+        while round_transmit_param_volume != num_active_params:
             time.sleep(0.01)
         round_transmit_param_volume = 0
         self.round_id += 1

@@ -1,15 +1,11 @@
 import torch
 import sys, os, argparse, copy, numpy, pprint, datetime, time
 
-import rpyc
-from rpyc import Service
-from rpyc.utils.server import ThreadedServer
-
 path=os.path.dirname(__file__)
-sys.path.append(path+'/..')
+sys.path.append(path+'/../..')
 from model_manager import Model_Manager
 from dataset_manager import Dataset_Manager
-from sync_manager import Sync_Manager
+from fedavg_manager import FedAvg_Manager
 from cas_manager import CAS_Manager
 from gift_manager import GIFT_Manager
 from adacomm_manager import AdaComm_Manager
@@ -27,7 +23,7 @@ class Client():
         ''' Variables required for local training. '''
         self.rank = sync_profile['rank']
         self.init_period = sync_prefile['init_period']
-        self.max_epoch = 1000000
+        self.max_epoch = 10000
 
         ''' Model Initialization'''
         self.model_manager = Model_Manager(local_profile['model_profile'])
@@ -38,20 +34,21 @@ class Client():
         ''' Dataset Initialization '''
         self.dataset_manager = Dataset_Manager(local_profile['dataset_profile'])
         self.training_dataloader = self.dataset_manager.get_training_dataloader()
-        self.testing_dataloader = self.dataset_manager.get_testing_dataloader()
+        # self.testing_dataloader = self.dataset_manager.get_testing_dataloader()
+        self.testing_dataloader = None
 
 
         """ Sync-related variables """
-        if sync_profile['interlayer_type'] == 'CAS':
-            self.sync_manager = CAS_Manager(self.model, sync_prefile)
+        if sync_profile['interlayer_type'].startswith('CAS'):
+            self.sync_manager = CAS_Manager(self.model_manager, sync_prefile)
         elif sync_profile['interlayer_type'] == 'GIFT':
-            self.sync_manager = GIFT_Manager(self.model, sync_prefile)
+            self.sync_manager = GIFT_Manager(self.model_manager, sync_prefile)
         elif sync_profile['interlayer_type'] == 'AdaComm':
-            self.sync_manager = AdaComm_Manager(self.model, sync_prefile)
+            self.sync_manager = AdaComm_Manager(self.model_manager, sync_prefile)
         elif sync_profile['interlayer_type'] == 'FedLAMA':
-            self.sync_manager = FedLAMA_Manager(self.model, sync_prefile)
+            self.sync_manager = FedLAMA_Manager(self.model_manager, sync_prefile)
         else:
-            self.sync_manager = Sync_Manager(self.model, sync_prefile)
+            self.sync_manager = FedAvg_Manager(self.model_manager, sync_prefile)
 
     def logging(self, string):
         print('[' + str(datetime.datetime.now()) + '] [Client] ' + str(string))
@@ -94,8 +91,11 @@ class Client():
                     b_y = b_y.cuda()
                 self.optimizer.zero_grad()
                 # t1 = time.time()
-                loss = self.loss_func(self.model(b_x), b_y)
-                loss_list.append(float(loss))
+                outputs = self.model(b_x)
+                if self.model_manager.model_name.startswith("Vit"):
+                    outputs = outputs.logits
+                loss = self.loss_func(outputs, b_y)
+                loss_list.append(loss.item())
                 loss.backward()
                 self.optimizer.step()
                 t2 = time.time()
@@ -143,6 +143,68 @@ class Client():
                     round_id += 1
             self.logging('finish epoch: %d\n' % epoch_id)
 
+    def bert_train(self):
+        print('\n\n\t-------- START TRAINING --------\n')
+        iter_id, round_id, epoch_id = 0, 0, 0
+        loss_list = []
+        while epoch_id < self.max_epoch:
+            # print(next(self.model.parameters()).device)
+            epoch_id += 1
+            self.logging('start epoch: %d' % epoch_id)
+            for inputs, labels in self.training_dataloader:
+                iter_id += 1
+                t1 = time.time()
+                input_ids = inputs['input_ids'].squeeze(1)
+                masks = inputs['attention_mask']
+                if CUDA:
+                    input_ids = input_ids.cuda()
+                    masks = masks.cuda()
+                    labels = labels.cuda()
+                outputs = self.model(input_ids, attention_mask=masks, labels=labels)
+                batch_loss = outputs.loss
+                loss_list.append(float(batch_loss))
+                batch_loss.backward()
+                self.optimizer.step()
+                self.optimizer.zero_grad()
+                t2 = time.time()
+                # self.logging(f'local_iter {iter_id} cost {t2-t1:.2f} s')
+                if self.sync_manager.try_sync_model(iter_id, loss_list):
+                    t3 = time.time()
+                    self.logging('try_sync_time: %.4f' % (t3-t2))
+                    loss_list = []
+                    round_id += 1
+                    # self.bert_test()
+            self.logging('finish epoch: %d\n' % epoch_id)
+
+    def bert_test(self):
+        self.model.eval()
+        total_acc_val = 0
+        total_loss_val = 0
+        # 不需要计算梯度
+        with torch.no_grad():
+            # 循环获取数据集，并用训练好的模型进行验证
+            for inputs, labels in self.testing_dataloader:
+                input_ids = inputs['input_ids'].squeeze(1)
+                masks = inputs['attention_mask']
+                if CUDA:
+                    input_ids = input_ids.cuda()
+                    masks = masks.cuda()
+                    labels = labels.cuda()
+                outputs = self.model(input_ids, attention_mask=masks, labels=labels)
+
+                batch_loss = outputs.loss
+                acc = (outputs.logits.argmax(dim=1) == labels).sum().item()
+                total_acc_val += acc
+                total_loss_val += batch_loss.item()
+            
+            print(f'''
+            | Test Loss: {total_loss_val / len(self.testing_dataloader): .3f} 
+            | Test Accuracy: {total_acc_val / len(self.testing_dataloader): .3f}''')
+            
+        self.model.train()
+
+
+
 
 if __name__ == '__main__':
     
@@ -177,8 +239,8 @@ if __name__ == '__main__':
         'dataset_profile' : {
             'dataset_name' : dataset_name,
             'is_iid' : is_iid,
-            'world_size' : 1 if is_iid else args.world_size,
-            'partition_rank' : 0 if is_iid else args.rank,
+            'world_size' : args.world_size,
+            'partition_rank' : args.rank,
             'batch_size' : args.batchsize,
             'dirichlet_alpha' : args.dirichlet_alpha
         }
@@ -204,6 +266,8 @@ if __name__ == '__main__':
     client = Client(local_profile, sync_profile)
     if args.interlayer_type == 'FedProx':
         client.fedporx_train()
+    if args.model.startswith("Bert"):
+        client.bert_train()
     else:
         client.train()
 

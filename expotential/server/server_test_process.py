@@ -8,9 +8,11 @@ from rpyc.utils.server import ThreadedServer
 from threading import Lock,Thread
 
 path=os.path.dirname(__file__)
-sys.path.append(path+'/..')
+sys.path.append(path+'/../..')
 from model_manager import Model_Manager
 from dataset_manager import Dataset_Manager
+
+
 
 torch.set_num_threads(4)
 torch.set_printoptions(precision=4)
@@ -18,7 +20,10 @@ CUDA = torch.cuda.is_available()
 print("CUDA: ",CUDA)
 
 test_lock = Lock()
+model_name = None
+model_manager = None
 model = None
+loss_func = None
 testing_dataloader = None
 cutoff_index_list, param_shape_list = [], []
 
@@ -34,6 +39,7 @@ class TestService(Service):
         # t1 = time.time()
         testing_thread = Thread(target=test_thread, args=(round_id, tensor_to_restore,))
         testing_thread.start()
+        testing_thread.join()
         # t2 = time.time()
         # self.logging("start_testing_thread: %.4f" % (t2-t1))
         
@@ -43,38 +49,64 @@ class TestService(Service):
         sys.stdout.flush()
 
 def test_thread(round_id, tensor_to_restore):
-        global model, testing_dataloader, cutoff_index_list, param_shape_list, test_lock
+        global model_manager, testing_dataloader, cutoff_index_list, param_shape_list, test_lock
 
         test_lock.acquire()
-        accuracy = 0
-        positive_test_number = 0.0
-        total_test_number = 0.0
-        # loss = 0.0
         if CUDA: tensor_to_restore = tensor_to_restore.cuda()
         ''' restore param '''
-        for i, param in enumerate(model.parameters()):
-            param.data = tensor_to_restore[cutoff_index_list[i][0]:cutoff_index_list[i][1]].view(param_shape_list[i])
+        model_manager.restore_model_with_tensor(tensor_to_restore)
 
         t1 = time.time()
-        with torch.no_grad():
-            for step, (test_x, test_y) in enumerate(testing_dataloader):
-                if CUDA:
-                    test_x = test_x.cuda()
-                    test_y = test_y.cuda()
-                test_output = model(test_x)
-                # loss += self.loss_func(test_output, test_y)
-                # pred_y = torch.max(test_output, 1)[1].data.cpu().numpy()
-                # positive_test_number += (pred_y == test_y.data.cpu().numpy()).astype(int).sum()
-                pred_y = torch.max(test_output, 1)[1].data.cpu().numpy()
-                positive_test_number += (pred_y == test_y.data.cpu().numpy()).astype(int).sum()
-                total_test_number += len(test_y)
-        # loss /= step
-        # print("loss: %.4f" % loss)
-        accuracy = positive_test_number / total_test_number
+        if model_name.startswith("Bert"):
+            accuracy, loss = bert_test()
+        else:
+            accuracy, loss = test()
         t2 = time.time()
         logging('test_time: %.4f' % (t2-t1))
-        logging(' - test - round_id: %d; accuracy: %.4f;' % (round_id, accuracy))
+        logging(' - test - round_id: %d; accuracy: %.4f; loss: %.4f' % (round_id, accuracy, loss))
         test_lock.release()
+
+def test():
+    global model, testing_dataloader, loss_func
+    positive_test_number = 0.0
+    total_test_number = 0.0
+    loss = 0.0
+    with torch.no_grad():
+        for step, (test_x, test_y) in enumerate(testing_dataloader):
+            if CUDA:
+                test_x = test_x.cuda()
+                test_y = test_y.cuda()
+            test_output = model(test_x)
+            if model_name.startswith("Vit"):
+                test_output = test_output.logits
+            loss += loss_func(test_output, test_y).item()
+            _, pred_y = torch.max(test_output, 1)
+            positive_test_number += (pred_y == test_y).sum().item()
+            total_test_number += len(test_y)
+    return positive_test_number / total_test_number, loss
+
+def bert_test():
+    global model, testing_dataloader
+    total_acc_val = 0
+    total_loss_val = 0
+    with torch.no_grad():
+        for inputs, labels in testing_dataloader:
+            input_ids = inputs['input_ids'].squeeze(1)
+            masks = inputs['attention_mask']
+            if CUDA:
+                input_ids = input_ids.cuda()
+                masks = masks.cuda()
+                labels = labels.cuda()
+            outputs = model(input_ids, attention_mask=masks, labels=labels)
+
+            batch_loss = outputs.loss
+            acc = (outputs.logits.argmax(dim=1) == labels).sum().item()
+            total_acc_val += acc
+            total_loss_val += batch_loss.item()
+    avg_acc = total_acc_val / len(testing_dataloader.dataset)
+    avg_loss = total_loss_val / len(testing_dataloader.dataset)
+    return avg_acc, avg_loss
+
 
 def logging(string):
     print('['+str(datetime.datetime.now())+'] [Test Process] '+str(string))
@@ -110,18 +142,10 @@ if __name__ == "__main__":
     model_manager = Model_Manager(local_profile['model_profile'])
     model = model_manager.load_model()
     # optimizer = model_manager.get_optimizer()
-    # loss_func = model_manager.get_loss_func()
+    loss_func = model_manager.get_loss_func()
 
     ''' Initialization Index List '''
-    param_shape_list = []
-    cutoff_index_list = []
-    s_index = 0
-    for param in model.parameters():
-        param_shape_list.append(param.data.shape)
-        flatten_params = param.data.view(-1)
-        e_index = s_index + len(flatten_params)
-        cutoff_index_list.append([s_index, e_index])
-        s_index = e_index
+    model_manager.get_param_shape()
 
 
     ''' Dataset Initialization '''
