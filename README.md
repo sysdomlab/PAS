@@ -11,7 +11,7 @@
 
 This repository contains the federated learning experiment code for PAS. It uses PyTorch for local model training and RPyC for parameter exchange and server aggregation. The implementation includes parameter-level synchronization period adjustment and adaptive parameter freezing to study the tradeoff between training accuracy and communication overhead.
 
-The method is named **PAS** in the paper. The repository retains the name `CASP-code`, and its implementation and launch arguments use `CAS` and `CAS-APF`. `CAS` adjusts synchronization periods for individual parameters, while `CAS-APF` adds parameter freezing. The repository also includes experiment entry points for `FedAvg`, `FedProx`, `AdaComm`, `FedLAMA`, and `GIFT`.
+The method is named **PAS** in the paper. The project is published as `sysdomlab/PAS`. Its implementation and launch arguments retain the names `CAS` and `CAS-APF`. `CAS` adjusts synchronization periods for individual parameters, while `CAS-APF` adds parameter freezing. The repository also includes experiment entry points for `FedAvg`, `FedProx`, `AdaComm`, `FedLAMA`, and `GIFT`.
 
 **Paper:** [PAS: Towards Accurate and Efficient Federated Learning with Parameter-Adaptive Synchronization](https://ieeexplore.ieee.org/document/10682875)
 
@@ -40,7 +40,7 @@ If this project is useful for your research, please cite:
 ## Project Structure
 
 ```text
-CASP-code/
+PAS/
 ├── README.md                        # Overview, citation, and usage instructions
 ├── LICENSE                          # MIT License
 ├── requirements.txt                 # Python dependencies
@@ -80,8 +80,8 @@ CASP-code/
 The scripts for experiments across machines target Linux systems with Bash, SSH, and SCP. Use a Python 3.10 environment for the existing PyTorch 1.13 dependency, and install the same dependency versions on every participating node. For GPU training, install a PyTorch build compatible with the local driver; see the [PyTorch installation instructions for previous versions](https://pytorch.org/get-started/previous-versions/#v1130).
 
 ```bash
-git clone https://github.com/chenc10/CASP-code.git
-cd CASP-code
+git clone https://github.com/sysdomlab/PAS.git
+cd PAS
 
 python3.10 -m venv .venv
 source .venv/bin/activate
@@ -193,7 +193,7 @@ Edit the experiment settings in `train.sh`:
 
 | Setting | Description |
 | --- | --- |
-| Repository path | Defaults to `$HOME/CASP-code`; it must match the deployment path on each node |
+| Repository path | Defaults to `$HOME/CASP-code`; update this setting to the actual PAS deployment path on each node |
 | `server` / `clients` | Aggregation server address and space-separated client addresses; the client count determines `world_size` |
 | `model` / `dataset` | Select matching model and dataset names |
 | `interlayer_type` | `CAS-APF`, `CAS`, `FedAvg`, `FedProx`, `AdaComm`, `FedLAMA`, or `GIFT` |
@@ -227,4 +227,4 @@ The script's fixed startup delays may be too short for initial dataset downloads
 
 **Maintainer:** [@gz944367214](https://github.com/gz944367214).
 
-For questions about the code, experiment reproduction, or bug reports, contact the maintainer through [GitHub Issues](https://github.com/chenc10/CASP-code/issues). Include your experiment configuration, dependency versions, and relevant logs.
+For questions about the code, experiment reproduction, or bug reports, contact the maintainer through [GitHub Issues](https://github.com/sysdomlab/PAS/issues). Include your experiment configuration, dependency versions, and relevant logs.
